@@ -76,6 +76,9 @@ class VisualNotification:
     def _detect_available_tools(self):
         """Detect available system notification tools."""
         tools = []
+        if os.name == 'nt':
+            return tools
+            
         for tool in ['zenity', 'yad', 'kdialog', 'xmessage']:
             try:
                 subprocess.run(['which', tool], capture_output=True, check=True)

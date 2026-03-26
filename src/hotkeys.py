@@ -8,6 +8,7 @@ import threading
 import time
 import select
 import sys
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -267,3 +268,73 @@ class WaylandGlobalHotkeys:
         self.running = False
         if self.virtual_keyboard:
             self.virtual_keyboard.destroy()
+
+class WindowsGlobalHotkeys:
+    """Windows-compatible global hotkey system using the keyboard library"""
+    
+    def __init__(self, callback_start, callback_stop, callback_config=None):
+        self.callback_start = callback_start
+        self.callback_stop = callback_stop
+        self.callback_config = callback_config
+        self.running = False
+        self.hotkey_active = False
+        self.devices = [True]  # Dummy to satisfy main.py checks
+        
+        try:
+            import keyboard
+            self.keyboard = keyboard
+        except ImportError as e:
+            logger.error(f"Missing dependency: {e}")
+            logger.error("Install with: pip install keyboard")
+            self.devices = []
+
+    def run(self):
+        """Main event loop for monitoring keyboard events"""
+        if not self.devices:
+            return False
+            
+        self.running = True
+        logger.info("Started Windows hotkey monitor loop")
+        
+        while self.running:
+            try:
+                # Check for config hotkey
+                if self.callback_config and \
+                   self.keyboard.is_pressed('ctrl') and \
+                   self.keyboard.is_pressed('alt') and \
+                   self.keyboard.is_pressed('i'):
+                    logger.debug("⚙️ Config hotkey activated")
+                    self.callback_config()
+                    # Wait for release to avoid triggering multiple times
+                    time.sleep(0.5)
+                    continue
+
+                # Check for start/stop (Alt+Shift)
+                alt_pressed = self.keyboard.is_pressed('alt') or self.keyboard.is_pressed('left alt') or self.keyboard.is_pressed('right alt')
+                shift_pressed = self.keyboard.is_pressed('shift') or self.keyboard.is_pressed('left shift') or self.keyboard.is_pressed('right shift')
+                
+                if alt_pressed and shift_pressed and not self.hotkey_active:
+                    logger.debug("🎙️ Hotkey activated - starting recording")
+                    self.hotkey_active = True
+                    self.callback_start()
+                elif self.hotkey_active and not (alt_pressed and shift_pressed):
+                    logger.debug("⏹️ Hotkey released - stopping recording")
+                    self.hotkey_active = False
+                    self.callback_stop()
+                    
+                time.sleep(0.01) # Small sleep to prevent high CPU usage
+            except Exception as e:
+                logger.error(f"Error in event loop: {e}")
+                time.sleep(1)
+        
+        return True
+    
+    def stop(self):
+        """Stop the hotkey monitoring"""
+        self.running = False
+
+# Export unified system based on OS
+if os.name == 'nt':
+    GlobalHotkeys = WindowsGlobalHotkeys
+else:
+    GlobalHotkeys = WaylandGlobalHotkeys

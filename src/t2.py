@@ -68,6 +68,9 @@ def reset_terminal():
     """Reset terminal settings if they become wonky"""
     try:
         import os
+        if os.name == 'nt':
+            os.system('cls')
+            return
         os.system('reset')
         # Also re-initialize termios just in case
         import termios, sys
@@ -426,6 +429,20 @@ def countdown_timer():
 
 def check_for_stop_key():
     """Check for space key"""
+    if os.name == 'nt':
+        try:
+            import msvcrt
+            while not stop_recording.is_set():
+                if msvcrt.kbhit():
+                    c = msvcrt.getch().decode('utf-8', 'ignore')
+                    if c == ' ':
+                        stop_recording.set()
+                        break
+                time.sleep(0.1)
+            return
+        except ImportError:
+            pass
+            
     import select
     try:
         import termios, tty
@@ -495,6 +512,16 @@ def record_and_transcribe():
 
 def getch():
     """Get single character with echo"""
+    if os.name == 'nt':
+        try:
+            import msvcrt
+            ch = msvcrt.getch().decode('utf-8', 'ignore')
+            sys.stdout.write(ch)
+            sys.stdout.flush()
+            return ch
+        except ImportError:
+            pass
+            
     try:
         import termios, tty
         fd = sys.stdin.fileno()

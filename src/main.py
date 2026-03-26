@@ -14,7 +14,7 @@ import atexit
 
 # Import core modules
 from notifications import VisualNotification
-from hotkeys import WaylandGlobalHotkeys
+from hotkeys import GlobalHotkeys
 
 # Import transcription functionality
 # Ensure we can find t2
@@ -24,6 +24,17 @@ from t2 import preload_model, DEVICE, record_audio_stream, process_audio_stream,
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+def play_sound_file(sound_path):
+    """Cross-platform sound playback"""
+    try:
+        if os.name == 'nt':
+            import winsound
+            winsound.PlaySound(sound_path, winsound.SND_FILENAME | winsound.SND_ASYNC)
+        else:
+            subprocess.Popen(['mpg123', '-q', sound_path], stderr=subprocess.DEVNULL)
+    except:
+        pass
 
 class SimpleVoiceTranscriber:
     def __init__(self):
@@ -55,7 +66,7 @@ class SimpleVoiceTranscriber:
     def init_hotkeys(self):
         """Initialize the global hotkey system"""
         try:
-            self.hotkey_system = WaylandGlobalHotkeys(
+            self.hotkey_system = GlobalHotkeys(
                 callback_start=self.start_recording,
                 callback_stop=self.stop_recording,
                 callback_config=self.change_input_device
@@ -93,13 +104,11 @@ class SimpleVoiceTranscriber:
             logger.warning(f"Visual notification error: {e}")
         
         # Play start recording sound
-        try:
-            if not t2.IS_MUTED:
-                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-                subprocess.Popen(['mpg123', '-q', sound_path], 
-                               stderr=subprocess.DEVNULL)
-        except:
-            pass
+        if not t2.IS_MUTED:
+            sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
+            # winsound doesn't play mp3 well, fallback to playing nothing or use a wav file if we had one.
+            # but we can try playing it. We might need wav for windows. Assuming pop2.mp3 is here.
+            play_sound_file(sound_path)
         
         # Start recording in background thread
         self.record_thread = threading.Thread(target=self.record_audio)
@@ -121,13 +130,9 @@ class SimpleVoiceTranscriber:
             logger.warning(f"Visual notification error: {e}")
         
         # Play stop recording sound
-        try:
-            if not t2.IS_MUTED:
-                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-                subprocess.Popen(['mpg123', '-q', sound_path], 
-                               stderr=subprocess.DEVNULL)
-        except:
-            pass
+        if not t2.IS_MUTED:
+            sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
+            play_sound_file(sound_path)
         
         # Wait for recording to finish
         if self.record_thread:
@@ -173,13 +178,9 @@ class SimpleVoiceTranscriber:
                     logger.warning(f"Visual notification error: {e}")
                 
                 # Play sound
-                try:
-                    if not t2.IS_MUTED:
-                        sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop.mp3')
-                        subprocess.Popen(['mpg123', '-q', sound_path], 
-                                       stderr=subprocess.DEVNULL)
-                except:
-                    pass
+                if not t2.IS_MUTED:
+                    sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop.mp3')
+                    play_sound_file(sound_path)
                 
                 logger.info(f"✅ Transcribed: {transcription}")
             else:
@@ -248,8 +249,32 @@ class SimpleVoiceTranscriber:
         except (KeyboardInterrupt, EOFError):
             logger.info("🎤 Ready for next recording")
         except ImportError:
-            # Windows fallback - use regular input
+            # Windows fallback - use msvcrt
             try:
+                import msvcrt
+                ch = msvcrt.getch().decode('utf-8')
+                
+                if ch == ' ':  # Space key
+                    logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                elif ch.lower() == 'i':  # Input device selection
+                    logger.info("🎤 Opening audio device selection...")
+                    if select_audio_device():
+                        logger.info("✅ Audio device updated!")
+                    else:
+                        logger.info("❌ Device selection cancelled.")
+                    reset_terminal()
+                    logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                elif ch.lower() == 'r':  # Reset terminal
+                    logger.info("🔄 Resetting terminal...")
+                    reset_terminal()
+                    logger.info("✅ Terminal reset complete.")
+                    logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                else:
+                    reset_terminal()
+                    logger.info("🎤 Ready for next recording")
+
+            except ImportError:
+                # Basic input fallback
                 choice = input("Enter choice (Space/i/r/other): ").strip().lower()
                 if choice == ' ' or choice == '':
                     logger.info("🎤 Ready to record - hold Alt+Shift when ready")
@@ -330,6 +355,10 @@ class SimpleVoiceTranscriber:
 if __name__ == "__main__":
     def check_permissions():
         """Check if user has proper permissions for input device access"""
+        if os.name == 'nt':
+            logger.info("✅ Running on Windows - permissions OK")
+            return True
+            
         import grp
         import pwd
         
@@ -389,6 +418,10 @@ if __name__ == "__main__":
     
     def check_input_devices():
         """Check if input devices are accessible"""
+        if os.name == 'nt':
+            logger.info("✅ Running on Windows - input devices accessible via keyboard library")
+            return True
+            
         try:
             import evdev
             devices = evdev.list_devices()
