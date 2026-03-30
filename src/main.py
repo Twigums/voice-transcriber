@@ -162,13 +162,29 @@ class SimpleVoiceTranscriber:
             transcription = result.strip()
             
             if transcription:
-                # Copy to clipboard
+                # Copy to clipboard with retry mechanism
                 import pyperclip
-                pyperclip.copy(transcription)
+                max_retries = 3
+                copy_success = False
+                for attempt in range(max_retries):
+                    try:
+                        pyperclip.copy(transcription)
+                        copy_success = True
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Clipboard copy failed (attempt {attempt+1}), retrying...")
+                            time.sleep(0.5)
+                        else:
+                            logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
                 
                 # Show completion notification
                 try:
-                    self.visual_notification.show_completed()
+                    if copy_success:
+                        self.visual_notification.show_completed()
+                    else:
+                        # Maybe show a different notification or log it
+                        logger.error("Transcription not copied to clipboard")
                 except Exception as e:
                     logger.warning(f"Visual notification error: {e}")
                 
@@ -211,7 +227,7 @@ class SimpleVoiceTranscriber:
         logger.info("🔧 What would you like to do?")
         logger.info("   Space: Try recording again")
         logger.info("   i: Change audio input device")
-        logger.info("   r: Reset terminal (if text is wonky)")
+        logger.info("   r: Reset terminal & clipboard (if things are wonky)")
         logger.info("   Any other key: Continue")
         logger.info("")
         
@@ -237,9 +253,9 @@ class SimpleVoiceTranscriber:
                 reset_terminal()
                 logger.info("🎤 Ready to record - hold Alt+Shift when ready")
             elif ch.lower() == 'r':  # Reset terminal
-                logger.info("🔄 Resetting terminal...")
+                logger.info("🔄 Resetting terminal and clipboard...")
                 reset_terminal()
-                logger.info("✅ Terminal reset complete.")
+                logger.info("✅ Reset complete.")
                 logger.info("🎤 Ready to record - hold Alt+Shift when ready")
             else:
                 reset_terminal()
@@ -261,9 +277,9 @@ class SimpleVoiceTranscriber:
                         logger.info("❌ Device selection cancelled.")
                     logger.info("🎤 Ready to record - hold Alt+Shift when ready")
                 elif choice == 'r':
-                    logger.info("🔄 Resetting terminal...")
+                    logger.info("🔄 Resetting terminal and clipboard...")
                     reset_terminal()
-                    logger.info("✅ Terminal reset complete.")
+                    logger.info("✅ Reset complete.")
                     logger.info("🎤 Ready to record - hold Alt+Shift when ready")
                 else:
                     logger.info("🎤 Ready for next recording")

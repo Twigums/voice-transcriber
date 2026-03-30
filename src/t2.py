@@ -65,10 +65,20 @@ def find_device_index(name):
     return None
 
 def reset_terminal():
-    """Reset terminal settings if they become wonky"""
+    """Reset terminal settings and clipboard processes if they become wonky"""
     try:
         import os
+        import subprocess
+        # Reset terminal state
         os.system('reset')
+        
+        # Kill stuck clipboard processes (Wayland)
+        try:
+            subprocess.run(['pkill', 'wl-copy'], stderr=subprocess.DEVNULL)
+            subprocess.run(['pkill', 'wl-paste'], stderr=subprocess.DEVNULL)
+        except:
+            pass
+
         # Also re-initialize termios just in case
         import termios, sys
         fd = sys.stdin.fileno()
@@ -483,12 +493,23 @@ def record_and_transcribe():
     
     transcription = result.strip()
     
-    try:
-        pyperclip.copy(transcription)
-        print("Transcription copied to clipboard")
-    except:
-        pass
-        
+    if transcription:
+        # Copy to clipboard with retry mechanism
+        max_retries = 3
+        copy_success = False
+        for attempt in range(max_retries):
+            try:
+                pyperclip.copy(transcription)
+                copy_success = True
+                print("✅ Transcription copied to clipboard")
+                break
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"⚠️ Clipboard copy failed (attempt {attempt+1}), retrying...")
+                    time.sleep(0.5)
+                else:
+                    print(f"❌ Failed to copy to clipboard after {max_retries} attempts: {e}")
+    
     print(f"Total time: {time.time() - process_start_time:.2f}s")
     print(f"\nTranscription: {transcription}")
     return transcription
@@ -532,7 +553,7 @@ def main():
                 print()
                 select_audio_device()
             elif ch.lower() == 'r':
-                print("\nResetting terminal...")
+                print("\n🔄 Resetting terminal and clipboard...")
                 reset_terminal()
             elif ch.lower() == 'q':
                 break

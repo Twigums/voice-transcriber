@@ -36,6 +36,26 @@ sudo nix run github:jjamesmartiin/voice-transcriber
 - Nix package manager
 - User must be in `input` group for global hotkeys (or run as root).
 
+## Troubleshooting
+
+### Clipboard Issues (Wayland)
+If `wl-clipboard` fails to copy text or seems stuck:
+- The app now includes a retry mechanism (3 attempts).
+- You can manually reset clipboard processes by pressing `r` in the terminal menu after a recording (if prompted) to reset both the terminal and clipboard.
+- Alternatively, run:
+  ```bash
+  pkill wl-copy
+  pkill wl-paste
+  ```
+- Ensure `wl-clipboard` is installed (it is included in the Nix flake).
+
+### Hotkey Issues
+- Ensure you have permissions to `/dev/input/`. Add your user to the `input` group:
+  ```bash
+  sudo usermod -a -G input $USER
+  ```
+- Then reboot or log out and back in.
+
 ### Development Environment
 To enter a shell with all dependencies (including Python environment):
 ```bash
