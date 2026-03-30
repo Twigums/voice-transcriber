@@ -50,6 +50,8 @@ RECORD_SECONDS = 20
 INPUT_DEVICE_INDEX = None
 PRIMARY_DEVICE_NAME = None
 SECONDARY_DEVICE_NAME = None
+LAST_USED_DEVICE_NAME = "Unknown"
+ACTUAL_RATE = RATE
 OVERRIDE_MODE = 'auto' # 'auto', 'primary', or 'secondary'
 CONFIG_FILE = get_data_dir() / 'audio_device_config.json'
 
@@ -57,11 +59,35 @@ def find_device_index(name):
     """Find device index by name substring match"""
     if not name:
         return None
-    devices = sd.query_devices()
-    for i, d in enumerate(devices):
-        if d['max_input_channels'] > 0 and name.lower() in d['name'].lower():
-            return i
+    try:
+        devices = sd.query_devices()
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0 and name.lower() in d['name'].lower():
+                return i
+    except Exception:
+        pass
     return None
+
+def get_active_device_name():
+    """Return the name of the device that will be used or was last used"""
+    global LAST_USED_DEVICE_NAME
+    if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
+        return f"Primary: {PRIMARY_DEVICE_NAME}"
+    elif OVERRIDE_MODE == 'secondary' and SECONDARY_DEVICE_NAME:
+        return f"Secondary: {SECONDARY_DEVICE_NAME}"
+    
+    # In auto mode, try to find what would be used
+    if PRIMARY_DEVICE_NAME:
+        idx = find_device_index(PRIMARY_DEVICE_NAME)
+        if idx is not None:
+            return f"Primary: {PRIMARY_DEVICE_NAME}"
+    
+    if SECONDARY_DEVICE_NAME:
+        idx = find_device_index(SECONDARY_DEVICE_NAME)
+        if idx is not None:
+            return f"Secondary: {SECONDARY_DEVICE_NAME} (Fallback)"
+            
+    return LAST_USED_DEVICE_NAME
 
 def reset_terminal():
     """Reset terminal settings if they become wonky"""
@@ -309,7 +335,7 @@ def select_audio_device():
 
 def record_audio_stream(interactive_mode=False):
     """Record audio using sounddevice with fallback and auto-recovery support"""
-    global INPUT_DEVICE_INDEX
+    global INPUT_DEVICE_INDEX, ACTUAL_RATE, LAST_USED_DEVICE_NAME
     
     # Manual Override Logic
     if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
@@ -354,11 +380,12 @@ def record_audio_stream(interactive_mode=False):
             print(status, file=sys.stderr)
         q.put(indata.copy())
 
-    def perform_recording(device_idx):
+    def perform_recording(device_idx, rate):
         nonlocal q
         frames = []
         try:
-            with sd.InputStream(samplerate=RATE, channels=CHANNELS, callback=callback, device=device_idx):
+            # Suppress ALSA/PortAudio errors if possible
+            with sd.InputStream(samplerate=rate, channels=CHANNELS, callback=callback, device=device_idx):
                 while not stop_recording.is_set():
                     try:
                         # Use a shorter timeout for better responsiveness to the stop event
@@ -374,7 +401,7 @@ def record_audio_stream(interactive_mode=False):
                         break
             return frames
         except Exception as e:
-            print(f"Error opening audio device {device_idx}: {e}")
+            # If it's specifically a sample rate error, we'll try a fallback in the parent
             return None
 
     # Interactive mode helpers
@@ -390,15 +417,46 @@ def record_audio_stream(interactive_mode=False):
         print("Recording... Press Space to stop")
     
     # Try primary/current device
-    frames = perform_recording(INPUT_DEVICE_INDEX)
+    frames = perform_recording(INPUT_DEVICE_INDEX, RATE)
+    ACTUAL_RATE = RATE
     
-    # If it failed, try to find a fallback (only if not in manual override mode)
+    # If it failed, try current device with its default sample rate
+    if frames is None:
+        try:
+            device_info = sd.query_devices(INPUT_DEVICE_INDEX)
+            default_rate = int(device_info['default_samplerate'])
+            if default_rate != RATE:
+                print(f"⚠️ {RATE}Hz failed on '{device_info['name']}', trying default {default_rate}Hz...")
+                frames = perform_recording(INPUT_DEVICE_INDEX, default_rate)
+                if frames is not None:
+                    ACTUAL_RATE = default_rate
+        except:
+            pass
+
+    # If it still failed, try to find a fallback (only if not in manual override mode)
     if frames is None and OVERRIDE_MODE == 'auto':
         print("🔄 Attempting fallback to secondary device...")
         fallback_idx = find_device_index(SECONDARY_DEVICE_NAME)
         if fallback_idx is not None and fallback_idx != INPUT_DEVICE_INDEX:
             print(f"⚠️ Primary device failed. Trying secondary: {SECONDARY_DEVICE_NAME} (index {fallback_idx})")
-            frames = perform_recording(fallback_idx)
+            
+            # Try secondary at standard rate
+            frames = perform_recording(fallback_idx, RATE)
+            ACTUAL_RATE = RATE
+            
+            # If secondary standard rate fails, try its default rate
+            if frames is None:
+                try:
+                    device_info = sd.query_devices(fallback_idx)
+                    default_rate = int(device_info['default_samplerate'])
+                    if default_rate != RATE:
+                        print(f"⚠️ {RATE}Hz failed on secondary, trying default {default_rate}Hz...")
+                        frames = perform_recording(fallback_idx, default_rate)
+                        if frames is not None:
+                            ACTUAL_RATE = default_rate
+                except:
+                    pass
+
             if frames is not None:
                 # Update current device if fallback succeeded
                 INPUT_DEVICE_INDEX = fallback_idx
@@ -409,7 +467,16 @@ def record_audio_stream(interactive_mode=False):
     elif frames is None:
         print(f"❌ Recording failed on {OVERRIDE_MODE} device.")
 
+    # Update the last used device name for reporting
+    try:
+        if INPUT_DEVICE_INDEX is not None:
+            name = sd.query_devices(INPUT_DEVICE_INDEX)['name']
+            LAST_USED_DEVICE_NAME = name
+    except:
+        pass
+
     return np.concatenate(frames, axis=0) if frames else np.array([])
+
 
 
 def countdown_timer():
@@ -452,7 +519,7 @@ def process_audio_stream(audio_data=None):
         if hasattr(audio_data, "flatten"):
             audio_data = audio_data.flatten()
             
-        result = transcribe_audio(audio_data=audio_data, sample_rate=RATE, device=DEVICE)
+        result = transcribe_audio(audio_data=audio_data, sample_rate=ACTUAL_RATE, device=DEVICE)
     except Exception as e:
         print(f"Processing error: {e}")
         result = ""

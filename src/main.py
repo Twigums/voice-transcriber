@@ -19,7 +19,11 @@ from hotkeys import WaylandGlobalHotkeys
 # Import transcription functionality
 # Ensure we can find t2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from t2 import preload_model, DEVICE, record_audio_stream, process_audio_stream, stop_recording, load_audio_config, select_audio_device, reset_terminal
+from t2 import (
+    preload_model, DEVICE, record_audio_stream, process_audio_stream, 
+    stop_recording, load_audio_config, select_audio_device, 
+    reset_terminal, get_active_device_name
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -38,6 +42,7 @@ class SimpleVoiceTranscriber:
         
         # Initialize visual notification
         self.visual_notification = VisualNotification(app_name="Voice Transcriber")
+        self.visual_notification.set_active_device(get_active_device_name())
         
         # Preload model in background
         logger.info("Loading transcription model...")
@@ -93,6 +98,8 @@ class SimpleVoiceTranscriber:
         # Show visual notification and play sound in background
         def notify_async():
             try:
+                # Update device name before showing notification
+                self.visual_notification.set_active_device(get_active_device_name())
                 self.visual_notification.show_recording()
             except Exception as e:
                 logger.warning(f"Visual notification error: {e}")

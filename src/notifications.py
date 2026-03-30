@@ -59,10 +59,15 @@ class VisualNotification:
         self.overlay_processes = []
         self.display_env = self._detect_display_environment()
         self.available_tools = self._detect_available_tools()
+        self.active_device = None
         
         if enable_logging:
             logger.info(f"Display environment: {self.display_env}")
             logger.info(f"Available tools: {self.available_tools}")
+    
+    def set_active_device(self, device_name):
+        """Set the active audio device name for display in notifications."""
+        self.active_device = device_name
     
     def _detect_display_environment(self):
         """Detect the current display environment."""
@@ -109,8 +114,15 @@ class VisualNotification:
         if self.active:
             return
         self.active = True
-        self._create_overlay("🔴 RECORDING", "#ff4444", persistent=True)
-        self._show_terminal_notification(f"🔴 {text} - Recording in progress")
+        
+        display_text = "🔴 RECORDING"
+        terminal_text = f"🔴 {text} - Recording in progress"
+        
+        if self.active_device:
+            terminal_text += f" (Device: {self.active_device})"
+            
+        self._create_overlay(display_text, "#ff4444", persistent=True)
+        self._show_terminal_notification(terminal_text)
     
     def show_processing(self, text="PROCESSING"):
         """Show a processing notification."""
@@ -289,7 +301,7 @@ if __name__ == "__main__":
                 symbol = "ℹ️"
             
             # Create minimal notification line
-            box_width = 50  # Smaller width
+            box_width = 70  # Increased width for device name
             border = "─" * box_width
             
             print(f"\n{color_code}┌{border}┐")
@@ -315,9 +327,13 @@ if __name__ == "__main__":
         
         try:
             # Don't clear screen, just show a minimal ready message
-            print(f"\n🎤 {self.app_name} Ready\n")
+            ready_msg = f"🎤 {self.app_name} Ready"
+            if self.active_device:
+                ready_msg += f" (Active: {self.active_device})"
+            print(f"\n{ready_msg}\n")
         except:
             pass
+
     
     def cleanup(self):
         """Clean up all resources and processes."""

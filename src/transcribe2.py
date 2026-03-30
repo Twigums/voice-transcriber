@@ -93,55 +93,82 @@ def check_auth():
 
 def load_model(model_id=MODEL_ID, device="cpu"):
     """Load model with optimized parameters for the current device"""
-    check_auth()
     token = get_token()
-    
-    print(f"🚀 Initializing Cohere model '{model_id}'...")
     
     # Use 'dtype' instead of deprecated 'torch_dtype'
     dtype = torch.float16 if device == "cuda" else torch.float32
     
+    # Try loading from local cache first to avoid "checking for updates" network hit
     try:
-        # Load processor and model, explicitly passing the token
+        print(f"🚀 Initializing Cohere model '{model_id}' (from cache)...")
         processor = AutoProcessor.from_pretrained(
             model_id, 
             trust_remote_code=True,
-            token=token
+            token=token,
+            local_files_only=True
         )
         
         # Patch for transformers compatibility issue in CohereAsrTokenizer
-        # The custom transcribe() method expects 'additional_special_tokens' to exist.
         if hasattr(processor, "tokenizer"):
             if not hasattr(processor.tokenizer, "additional_special_tokens"):
-                print("🔧 Patching tokenizer: adding missing 'additional_special_tokens' attribute")
                 processor.tokenizer.additional_special_tokens = []
         
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_id,
             dtype=dtype,
             trust_remote_code=True,
-            token=token
+            token=token,
+            local_files_only=True
         ).to(device)
         
-        # Optional: compile the encoder for better performance if on Linux/CUDA
-        if device == "cuda" and os.name == "posix":
-            try:
-                print("Compiling model for faster inference...")
-                model.model.encoder = torch.compile(model.model.encoder)
-            except Exception as e:
-                print(f"Compilation skipped: {e}")
-                
+        print("✅ Loaded from local cache.")
         return model, processor
     except Exception as e:
-        error_str = str(e).lower()
-        if "403" in error_str or "access" in error_str or "unauthorized" in error_str or "401" in error_str:
-            print("\n❌ Error: Access denied to gated model.")
-            print(f"Make sure you have been granted access at: https://huggingface.co/{model_id}")
-            print("Check that your HF_TOKEN is correct and has 'Read' permissions.")
-            if token:
-                masked = token[:6] + "..." + token[-4:] if len(token) > 10 else "******"
-                print(f"Current token (masked): {masked}")
-        raise e
+        # If local loading failed, we probably need to download or verify
+        print(f"ℹ️ Model not in cache or update needed: {e}")
+        print(f"🚀 Downloading/Verifying Cohere model '{model_id}'...")
+        
+        # Now check auth and login only when we actually need network
+        check_auth()
+        token = get_token()
+        
+        try:
+            processor = AutoProcessor.from_pretrained(
+                model_id, 
+                trust_remote_code=True,
+                token=token
+            )
+            
+            if hasattr(processor, "tokenizer"):
+                if not hasattr(processor.tokenizer, "additional_special_tokens"):
+                    processor.tokenizer.additional_special_tokens = []
+            
+            model = AutoModelForSpeechSeq2Seq.from_pretrained(
+                model_id,
+                dtype=dtype,
+                trust_remote_code=True,
+                token=token
+            ).to(device)
+            
+            # Optional: compile the encoder for better performance if on Linux/CUDA
+            if device == "cuda" and os.name == "posix":
+                try:
+                    print("Compiling model for faster inference...")
+                    model.model.encoder = torch.compile(model.model.encoder)
+                except Exception as e:
+                    print(f"Compilation skipped: {e}")
+                    
+            return model, processor
+        except Exception as e:
+            error_str = str(e).lower()
+            if "403" in error_str or "access" in error_str or "unauthorized" in error_str or "401" in error_str:
+                print("\n❌ Error: Access denied to gated model.")
+                print(f"Make sure you have been granted access at: https://huggingface.co/{model_id}")
+                print("Check that your HF_TOKEN is correct and has 'Read' permissions.")
+                if token:
+                    masked = token[:6] + "..." + token[-4:] if len(token) > 10 else "******"
+                    print(f"Current token (masked): {masked}")
+            raise e
 
 def get_model(model_id=MODEL_ID, device="cpu"):
     """Get or initialize the model and processor singleton"""
