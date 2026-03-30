@@ -16,6 +16,10 @@ nix run github:jjamesmartiin/voice-transcriber
 sudo nix run github:jjamesmartiin/voice-transcriber
 ```
 
+### Hugging Face API Token (for first run)
+To download the necessary models from Hugging Face, you need to provide your API token. Create a file named `HF_TOKEN` in the project root directory and paste your token into it. This file is in `.gitignore` and will not be committed. This is only required for the initial download.
+
+**TODO**: Remove this requirement once the model is fully public and does not require access-based authentication.
 
 ## Features
 - **Global Hotkeys**: Hold `Alt+Shift` to record, release to transcribe.
