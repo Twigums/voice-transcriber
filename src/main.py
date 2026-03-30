@@ -36,6 +36,7 @@ class SimpleVoiceTranscriber:
         self.hotkey_system = None
         self.running = False
         self.audio_frames = []
+        self.copy_to_clipboard = False
         
         # Load saved audio device configuration
         load_audio_config()
@@ -113,12 +114,13 @@ class SimpleVoiceTranscriber:
         
         threading.Thread(target=notify_async, daemon=True).start()
 
-    def stop_recording(self):
+    def stop_recording(self, copy_to_clipboard=False):
         """Stop recording and process audio"""
         if not self.recording:
             return
             
         self.recording = False
+        self.copy_to_clipboard = copy_to_clipboard
         stop_recording.set()
         
         # Show processing notification and sound in background
@@ -169,9 +171,35 @@ class SimpleVoiceTranscriber:
             transcription = result.strip()
             
             if transcription:
-                # Copy to clipboard
-                import pyperclip
-                pyperclip.copy(transcription)
+                # Output the transcription based on mode
+                if self.copy_to_clipboard:
+                    # Copy to clipboard
+                    import pyperclip
+                    pyperclip.copy(transcription)
+                    logger.info(f"✅ Copied to clipboard: {transcription}")
+                else:
+                    # Type the text directly
+                    try:
+                        # CRITICAL: Wait for all modifiers to be released to avoid triggering shortcuts
+                        logger.debug("Waiting for modifier release before typing...")
+                        timeout = 1.0
+                        start_wait = time.time()
+                        while self.hotkey_system and self.hotkey_system.are_modifiers_pressed() and (time.time() - start_wait < timeout):
+                            time.sleep(0.02)
+                        
+                        # Small extra buffer to let OS process the releases
+                        time.sleep(0.05)
+                        
+                        if self.hotkey_system and self.hotkey_system.type_text(transcription):
+                            logger.info(f"✅ Typed: {transcription}")
+                        else:
+                            raise Exception("uinput typing failed or not available")
+                    except Exception as e:
+                        logger.error(f"Error typing transcription: {e}")
+                        # Fallback to clipboard on error
+                        import pyperclip
+                        pyperclip.copy(transcription)
+                        logger.info(f"⚠️ Fallback: Copied to clipboard instead: {transcription}")
                 
                 # Show completion notification with the transcribed text
                 try:
@@ -316,7 +344,8 @@ class SimpleVoiceTranscriber:
         
         logger.info("🎤 Voice Transcriber started!")
         logger.info(f"📱 Using device: {DEVICE}")
-        logger.info("🔥 Hold Alt+Shift to record, release to transcribe")
+        logger.info("🔥 Hold Alt+Shift to record, release to TYPE")
+        logger.info("📋 Hold Ctrl+Alt+Shift to record, release to COPY")
         logger.info("⚙️  Press Ctrl+Alt+I to change input device")
         logger.info("🔄 Use Ctrl+C to exit")
         

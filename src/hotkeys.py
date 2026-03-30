@@ -48,21 +48,109 @@ class WaylandGlobalHotkeys:
             
         # Create virtual keyboard for sending events
         try:
-            # Define the keys we might need to send
-            events = (
-                uinput.KEY_LEFTALT, uinput.KEY_RIGHTALT,
-                uinput.KEY_LEFTSHIFT, uinput.KEY_RIGHTSHIFT,
-                uinput.KEY_A, uinput.KEY_SPACE,
-                # Add more keys as needed
-            )
-            self.virtual_keyboard = uinput.Device(events)
-            logger.info("Created virtual keyboard device")
+            # Add all keyboard keys to the virtual device
+            all_keys = [getattr(uinput, name) for name in dir(uinput) if name.startswith('KEY_')]
+            self.virtual_keyboard = uinput.Device(all_keys)
+            logger.info(f"Created virtual keyboard device with {len(all_keys)} keys")
         except Exception as e:
             logger.warning(f"Could not create virtual keyboard: {e}")
             # Continue without virtual keyboard - we can still detect hotkeys
             
         # Initial scan
         return self.scan_for_devices()
+    
+    def type_text(self, text):
+        """Type text using the virtual keyboard device"""
+        if not self.virtual_keyboard:
+            logger.warning("Virtual keyboard not available for typing")
+            return False
+            
+        try:
+            uinput = self.uinput
+            
+            # Map of char -> (uinput_key, shift_needed)
+            # This covers common US-QWERTY characters
+            key_map = {
+                'a': (uinput.KEY_A, False), 'b': (uinput.KEY_B, False), 'c': (uinput.KEY_C, False),
+                'd': (uinput.KEY_D, False), 'e': (uinput.KEY_E, False), 'f': (uinput.KEY_F, False),
+                'g': (uinput.KEY_G, False), 'h': (uinput.KEY_H, False), 'i': (uinput.KEY_I, False),
+                'j': (uinput.KEY_J, False), 'k': (uinput.KEY_K, False), 'l': (uinput.KEY_L, False),
+                'm': (uinput.KEY_M, False), 'n': (uinput.KEY_N, False), 'o': (uinput.KEY_O, False),
+                'p': (uinput.KEY_P, False), 'q': (uinput.KEY_Q, False), 'r': (uinput.KEY_R, False),
+                's': (uinput.KEY_S, False), 't': (uinput.KEY_T, False), 'u': (uinput.KEY_U, False),
+                'v': (uinput.KEY_V, False), 'w': (uinput.KEY_W, False), 'x': (uinput.KEY_X, False),
+                'y': (uinput.KEY_Y, False), 'z': (uinput.KEY_Z, False),
+                '1': (uinput.KEY_1, False), '2': (uinput.KEY_2, False), '3': (uinput.KEY_3, False),
+                '4': (uinput.KEY_4, False), '5': (uinput.KEY_5, False), '6': (uinput.KEY_6, False),
+                '7': (uinput.KEY_7, False), '8': (uinput.KEY_8, False), '9': (uinput.KEY_9, False),
+                '0': (uinput.KEY_0, False),
+                ' ': (uinput.KEY_SPACE, False),
+                '.': (uinput.KEY_DOT, False),
+                ',': (uinput.KEY_COMMA, False),
+                '!': (uinput.KEY_1, True),
+                '@': (uinput.KEY_2, True),
+                '#': (uinput.KEY_3, True),
+                '$': (uinput.KEY_4, True),
+                '%': (uinput.KEY_5, True),
+                '^': (uinput.KEY_6, True),
+                '&': (uinput.KEY_7, True),
+                '*': (uinput.KEY_8, True),
+                '(': (uinput.KEY_9, True),
+                ')': (uinput.KEY_0, True),
+                '?': (uinput.KEY_SLASH, True),
+                '/': (uinput.KEY_SLASH, False),
+                '\n': (uinput.KEY_ENTER, False),
+                '\t': (uinput.KEY_TAB, False),
+                '-': (uinput.KEY_MINUS, False),
+                '_': (uinput.KEY_MINUS, True),
+                '=': (uinput.KEY_EQUAL, False),
+                '+': (uinput.KEY_EQUAL, True),
+                ':': (uinput.KEY_SEMICOLON, True),
+                ';': (uinput.KEY_SEMICOLON, False),
+                '"': (uinput.KEY_APOSTROPHE, True),
+                "'": (uinput.KEY_APOSTROPHE, False),
+                '<': (uinput.KEY_COMMA, True),
+                '>': (uinput.KEY_DOT, True),
+                '[': (uinput.KEY_LEFTBRACE, False),
+                ']': (uinput.KEY_RIGHTBRACE, False),
+                '{': (uinput.KEY_LEFTBRACE, True),
+                '}': (uinput.KEY_RIGHTBRACE, True),
+                '\\': (uinput.KEY_BACKSLASH, False),
+                '|': (uinput.KEY_BACKSLASH, True),
+                '`': (uinput.KEY_GRAVE, False),
+                '~': (uinput.KEY_GRAVE, True),
+            }
+            
+            for char in text:
+                shift = False
+                key = None
+                
+                char_lower = char.lower()
+                if char_lower in key_map:
+                    key, shift = key_map[char_lower]
+                    # If the original char was uppercase, we need shift regardless of the map
+                    if char.isupper():
+                        shift = True
+                else:
+                    # Skip unknown characters
+                    continue
+                
+                if shift:
+                    self.virtual_keyboard.emit(uinput.KEY_LEFTSHIFT, 1)
+                
+                self.virtual_keyboard.emit(key, 1) # Press
+                self.virtual_keyboard.emit(key, 0) # Release
+                
+                if shift:
+                    self.virtual_keyboard.emit(uinput.KEY_LEFTSHIFT, 0)
+                
+                # Small delay to prevent overwhelming the input buffer
+                time.sleep(0.01)
+                
+            return True
+        except Exception as e:
+            logger.error(f"Error typing text via uinput: {e}")
+            return False
         
     def _is_keyboard_device(self, device):
         """Check if a device looks like a keyboard we want to monitor"""
@@ -156,6 +244,17 @@ class WaylandGlobalHotkeys:
         
         return alt_pressed and ctrl_pressed and i_pressed
     
+    def is_ctrl_pressed(self):
+        """Check if Ctrl is currently pressed"""
+        return any(self.key_states.get(key, False) for key in self.CTRL_KEYS)
+
+    def are_modifiers_pressed(self):
+        """Check if any modifier keys (Alt, Shift, Ctrl) are still pressed"""
+        alt_pressed = any(self.key_states.get(key, False) for key in self.ALT_KEYS)
+        shift_pressed = any(self.key_states.get(key, False) for key in self.SHIFT_KEYS)
+        ctrl_pressed = any(self.key_states.get(key, False) for key in self.CTRL_KEYS)
+        return alt_pressed or shift_pressed or ctrl_pressed
+
     def is_hotkey_released(self):
         """Check if hotkey combination is no longer fully pressed"""
         alt_pressed = any(self.key_states.get(key, False) for key in self.ALT_KEYS)
@@ -186,11 +285,14 @@ class WaylandGlobalHotkeys:
         if self.is_hotkey_pressed() and not self.hotkey_active:
             logger.debug("🎙️ Hotkey activated - starting recording")
             self.hotkey_active = True
+            # Store if Ctrl was pressed when hotkey was activated
+            self.copy_to_clipboard_mode = self.is_ctrl_pressed()
             self.callback_start()
         elif self.hotkey_active and self.is_hotkey_released():
             logger.debug("⏹️ Hotkey released - stopping recording")
             self.hotkey_active = False
-            self.callback_stop()
+            # Pass the mode to callback_stop
+            self.callback_stop(copy_to_clipboard=self.copy_to_clipboard_mode)
     
     def run(self):
         """Main event loop for monitoring keyboard events"""
