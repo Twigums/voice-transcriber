@@ -27,15 +27,8 @@ To download the necessary models from Hugging Face, you need to provide your API
 - **Low Latency**: Optimized for quick transcription.
 - **Privacy-focused**: Runs locally using Faster Whisper.
 
-## Project Structure
-- `src/`: Source code
-  - `main.py`: Entry point and orchestration.
-  - `notifications.py`: Visual notification system.
-  - `hotkeys.py`: Global hotkey handling.
-  - `t2.py` / `transcribe2.py`: Audio recording and transcription logic.
-- `tests/`: Feature parity tests.
 
-## 🧠 Codebase Context (for AI & Developers)
+## Codebase Context 
 
 This section provides a high-level overview of the project's architecture and technology stack to help AI models and developers understand the codebase quickly.
 
@@ -55,7 +48,7 @@ This section provides a high-level overview of the project's architecture and te
   - `src/hotkeys.py`: Low-level keyboard event handling and virtual keyboard device creation.
   - `src/notifications.py`: Multi-platform notification logic (terminal + GUI).
 
-## 🤝 Contributing
+## Contributing
 
 We welcome contributions from everyone and of any type! Whether you're fixing a bug, adding a feature, improving documentation, or just sharing an idea, your help is appreciated.
 
