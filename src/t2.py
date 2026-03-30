@@ -434,7 +434,7 @@ def process_audio_stream(audio_data=None):
     if audio_data is None or len(audio_data) == 0:
         return "", 0
         
-    model = get_model(device=DEVICE)
+    get_model(device=DEVICE)
     
     transcribe_start_time = time.time()
     

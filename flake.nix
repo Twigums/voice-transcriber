@@ -1,19 +1,20 @@
 {
   description = "VT - Voice Transcriber Reference Implementation";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
   outputs = { self, nixpkgs } @ inputs:
     let
       supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
       forEachSupportedSystem = f: inputs.nixpkgs.lib.genAttrs supportedSystems (system: f {
+        inherit system;
         pkgs = import inputs.nixpkgs { inherit system; };
       });
 
       version = "1.0.0";
     in
     {
-      packages = forEachSupportedSystem ({ pkgs }:
+      packages = forEachSupportedSystem ({ system, pkgs }:
         let
           # Custom python with package overrides
           python = pkgs.python3.override {
@@ -36,16 +37,16 @@
             # GUI tools
             zenity
             # X11/GUI deps
-            xorg.libX11
-            xorg.libXext
-            xorg.libXrender
-            xorg.libXinerama
-            xorg.libXrandr
-            xorg.libXcursor
-            xorg.libXcomposite
-            xorg.libXdamage
-            xorg.libXfixes
-            xorg.libXScrnSaver
+            libx11
+            libxext
+            libxrender
+            libxinerama
+            libxrandr
+            libxcursor
+            libxcomposite
+            libxdamage
+            libxfixes
+            libxscrnsaver
             gtk3
             glib
             fontconfig
@@ -69,6 +70,14 @@
             pynput
             python-uinput
             faster-whisper
+            torch
+            transformers
+            huggingface-hub
+            sentencepiece
+            protobuf
+            accelerate
+            librosa
+            datasets
           ]);
         in
         {
@@ -85,15 +94,15 @@
               cat > $out/bin/vt << EOF
               #!${pkgs.bash}/bin/bash
               export PATH="${pkgs.lib.makeBinPath runtimeDeps}:\$PATH"
-              cd $out/share/vt
-              exec ${pythonEnv}/bin/python main.py "\$@"
+              export PYTHONPATH="$out/share/vt:\$PYTHONPATH"
+              exec ${pythonEnv}/bin/python $out/share/vt/main.py "\$@"
               EOF
               chmod +x $out/bin/vt
             '';
           };
         });
 
-      apps = forEachSupportedSystem ({ pkgs }:
+      apps = forEachSupportedSystem ({ system, pkgs }:
         let
           # Reusing definitions (simplification for brevity, though ideally shared)
           python = pkgs.python3.override {
@@ -116,6 +125,14 @@
             pynput
             python-uinput
             faster-whisper
+            torch
+            transformers
+            huggingface-hub
+            sentencepiece
+            protobuf
+            accelerate
+            librosa
+            datasets
             pytest
           ]);
 
@@ -129,16 +146,16 @@
             readline
             mpg123
             zenity
-            xorg.libX11
-            xorg.libXext
-            xorg.libXrender
-            xorg.libXinerama
-            xorg.libXrandr
-            xorg.libXcursor
-            xorg.libXcomposite
-            xorg.libXdamage
-            xorg.libXfixes
-            xorg.libXScrnSaver
+            libx11
+            libxext
+            libxrender
+            libxinerama
+            libxrandr
+            libxcursor
+            libxcomposite
+            libxdamage
+            libxfixes
+            libxscrnsaver
             gtk3
             glib
             fontconfig
@@ -148,12 +165,12 @@
             wl-clipboard
           ];
 
-          vt_pkg = self.packages.${pkgs.system}.default;
+          vt_pkg = self.packages.${system}.default;
         in
         {
           default = {
             type = "app";
-            program = "${self.packages.${pkgs.system}.default}/bin/vt";
+            program = "${self.packages.${system}.default}/bin/vt";
           };
 
           test = {
@@ -166,7 +183,7 @@
           };
         });
 
-      devShells = forEachSupportedSystem ({ pkgs }:
+      devShells = forEachSupportedSystem ({ system, pkgs }:
         let
           python = pkgs.python3.override {
             self = python;
@@ -185,16 +202,16 @@
             readline
             mpg123
             zenity
-            xorg.libX11
-            xorg.libXext
-            xorg.libXrender
-            xorg.libXinerama
-            xorg.libXrandr
-            xorg.libXcursor
-            xorg.libXcomposite
-            xorg.libXdamage
-            xorg.libXfixes
-            xorg.libXScrnSaver
+            libx11
+            libxext
+            libxrender
+            libxinerama
+            libxrandr
+            libxcursor
+            libxcomposite
+            libxdamage
+            libxfixes
+            libxscrnsaver
             gtk3
             glib
             fontconfig
@@ -216,6 +233,14 @@
             pynput
             python-uinput
             faster-whisper
+            torch
+            transformers
+            huggingface-hub
+            sentencepiece
+            protobuf
+            accelerate
+            librosa
+            datasets
             pip
             pytest # Added for testing
           ]);
