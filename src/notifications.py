@@ -229,21 +229,12 @@ if __name__ == "__main__":
     create_overlay()
 '''
         
-        # Create temporary script file
-        temp_dir = Path(tempfile.gettempdir())
-        overlay_file = temp_dir / f'{self.app_name.lower().replace(" ", "_")}_overlay_{int(time.time())}.py'
-        with open(overlay_file, 'w') as f:
-            f.write(overlay_script)
-        
-        # Launch overlay process using the same Python executable
+        # Launch overlay process directly using the -c flag
         import sys
-        process = subprocess.Popen([sys.executable, str(overlay_file)], 
+        process = subprocess.Popen([sys.executable, '-c', overlay_script], 
                                  stderr=subprocess.DEVNULL, 
                                  stdout=subprocess.DEVNULL)
         self.overlay_processes.append(process)
-        
-        # Schedule cleanup of temporary file
-        threading.Timer(10.0, lambda: self._cleanup_temp_file(overlay_file)).start()
     
     def _create_zenity_notification(self, text, persistent):
         """Create a zenity-based notification."""
@@ -258,17 +249,6 @@ if __name__ == "__main__":
         
         process = subprocess.Popen(cmd, stderr=subprocess.DEVNULL)
         self.overlay_processes.append(process)
-    
-    def _cleanup_temp_file(self, filepath):
-        """Clean up temporary overlay script files."""
-        try:
-            if isinstance(filepath, Path):
-                if filepath.exists():
-                    filepath.unlink()
-            elif os.path.exists(filepath):
-                os.remove(filepath)
-        except Exception as e:
-            logger.debug(f"Failed to cleanup temp file {filepath}: {e}")
     
     def _cleanup_overlays(self):
         """Clean up all active overlay processes."""

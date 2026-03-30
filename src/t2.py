@@ -45,7 +45,7 @@ def get_temp_dir():
 
 # Audio configuration
 CHANNELS = 1
-RATE = 48000
+RATE = 16000
 RECORD_SECONDS = 20
 INPUT_DEVICE_INDEX = None
 PRIMARY_DEVICE_NAME = None
@@ -361,9 +361,17 @@ def record_audio_stream(interactive_mode=False):
             with sd.InputStream(samplerate=RATE, channels=CHANNELS, callback=callback, device=device_idx):
                 while not stop_recording.is_set():
                     try:
-                        frames.append(q.get(timeout=0.2))
+                        # Use a shorter timeout for better responsiveness to the stop event
+                        frames.append(q.get(timeout=0.05))
                     except queue.Empty:
                         continue
+                
+                # Drain any remaining frames in the queue
+                while not q.empty():
+                    try:
+                        frames.append(q.get_nowait())
+                    except queue.Empty:
+                        break
             return frames
         except Exception as e:
             print(f"Error opening audio device {device_idx}: {e}")
@@ -438,24 +446,19 @@ def process_audio_stream(audio_data=None):
     
     transcribe_start_time = time.time()
     
-    temp_dir = get_temp_dir()
-    temp_file = temp_dir / "temp_output.wav"
-    
-    sf.write(str(temp_file), audio_data, RATE)
-        
-    # Transcribe
+    # Transcribe directly from numpy array
     try:
-        result = transcribe_audio(audio_path=str(temp_file), device=DEVICE)
-    finally:
-        pass
+        # sounddevice returns data in float32, mono recording should be flattened to 1D
+        if hasattr(audio_data, "flatten"):
+            audio_data = audio_data.flatten()
+            
+        result = transcribe_audio(audio_data=audio_data, sample_rate=RATE, device=DEVICE)
+    except Exception as e:
+        print(f"Processing error: {e}")
+        result = ""
         
     transcribe_end_time = time.time()
     
-    try:
-        temp_file.unlink()
-    except:
-        pass
-        
     return result, transcribe_end_time - transcribe_start_time
 
 def record_and_transcribe():
@@ -465,18 +468,20 @@ def record_and_transcribe():
     
     frames = record_audio_stream(interactive_mode=True)
     
-    # Transcribe
+    # Transcribe using the optimized process_audio_stream
     result, transcribe_time = process_audio_stream(frames)
     
     transcription = result.strip()
     
     try:
-        pyperclip.copy(transcription)
-        print("Transcription copied to clipboard")
+        if transcription:
+            import pyperclip
+            pyperclip.copy(transcription)
+            print("Transcription copied to clipboard")
     except:
         pass
         
-    print(f"Total time: {time.time() - process_start_time:.2f}s")
+    print(f"Total time: {time.time() - process_start_time:.2f}s (Transcribe: {transcribe_time:.2f}s)")
     print(f"\nTranscription: {transcription}")
     return transcription
 

@@ -85,24 +85,26 @@ class SimpleVoiceTranscriber:
         stop_recording.clear()
         self.audio_frames = []
         
-        # Show visual notification
-        try:
-            self.visual_notification.show_recording()
-        except Exception as e:
-            logger.warning(f"Visual notification error: {e}")
-        
-        # Play start recording sound
-        try:
-            sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-            subprocess.Popen(['mpg123', '-q', sound_path], 
-                           stderr=subprocess.DEVNULL)
-        except:
-            pass
-        
-        # Start recording in background thread
+        # Start recording in background thread IMMEDIATELY
         self.record_thread = threading.Thread(target=self.record_audio)
         self.record_thread.daemon = True
         self.record_thread.start()
+        
+        # Show visual notification and play sound in background
+        def notify_async():
+            try:
+                self.visual_notification.show_recording()
+            except Exception as e:
+                logger.warning(f"Visual notification error: {e}")
+            
+            try:
+                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
+                subprocess.Popen(['mpg123', '-q', sound_path], 
+                               stderr=subprocess.DEVNULL)
+            except:
+                pass
+        
+        threading.Thread(target=notify_async, daemon=True).start()
 
     def stop_recording(self):
         """Stop recording and process audio"""
@@ -112,25 +114,26 @@ class SimpleVoiceTranscriber:
         self.recording = False
         stop_recording.set()
         
-        # Show processing notification
-        try:
-            self.visual_notification.show_processing()
-        except Exception as e:
-            logger.warning(f"Visual notification error: {e}")
+        # Show processing notification and sound in background
+        def notify_stop_async():
+            try:
+                self.visual_notification.show_processing()
+            except Exception as e:
+                logger.warning(f"Visual notification error: {e}")
+            
+            try:
+                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
+                subprocess.Popen(['mpg123', '-q', sound_path], 
+                               stderr=subprocess.DEVNULL)
+            except:
+                pass
         
-        # Play stop recording sound
-        try:
-            sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-            subprocess.Popen(['mpg123', '-q', sound_path], 
-                           stderr=subprocess.DEVNULL)
-        except:
-            pass
+        threading.Thread(target=notify_stop_async, daemon=True).start()
         
-        # Wait for recording to finish
+        # Wait for recording to finish and start processing
         if self.record_thread:
             self.record_thread.join()
         
-        # Process the recorded audio
         self.process_thread = threading.Thread(target=self.process_and_transcribe)
         self.process_thread.daemon = True
         self.process_thread.start()

@@ -8,6 +8,7 @@ import os
 import time
 import sys
 import torch
+import numpy as np
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from huggingface_hub import login
 
@@ -156,19 +157,36 @@ def get_model(model_id=MODEL_ID, device="cpu"):
     return _model, _processor
 
 def preload_model(model_id=MODEL_ID, device="cpu"):
-    """Preload the model in a background thread"""
+    """Preload the model in a background thread with a warmup call"""
     def _preload():
         try:
-            get_model(model_id, device)
-        except Exception:
-            pass
+            model, processor = get_model(model_id, device)
+            
+            # Warmup call with 0.1s of silence to trigger compilation/optimization
+            print("🔥 Warming up model (this may take a moment if compiling)...")
+            warmup_audio = np.zeros(int(16000 * 0.1), dtype=np.float32)
+            
+            # Use compile=False for warmup to ensure it finishes quickly if compilation is too slow,
+            # OR use compile=True to ensure the compilation happens NOW in the background.
+            # Given we want to speed up the FIRST user transcription, we should compile NOW.
+            model.transcribe(
+                processor=processor,
+                audio_arrays=[warmup_audio],
+                sample_rates=[16000],
+                language="en",
+                compile=True if device == "cuda" else False,
+                pipeline_detokenization=True if os.name == "posix" else False
+            )
+            print("✨ Warmup complete! Ready for instant transcription.")
+        except Exception as e:
+            print(f"⚠️ Preload/Warmup error: {e}")
     
     thread = threading.Thread(target=_preload)
     thread.daemon = True
     thread.start()
     return thread
 
-def transcribe_audio(audio_path="output.wav", device="cpu", language="en"):
+def transcribe_audio(audio_path=None, audio_data=None, sample_rate=16000, device="cpu", language="en"):
     """Transcribe audio with Cohere model"""
     try:
         model, processor = get_model(device=device)
@@ -178,14 +196,29 @@ def transcribe_audio(audio_path="output.wav", device="cpu", language="en"):
     start_time = time.time()
     
     try:
-        # The transcribe method internally handles the preprocessing and resampling to 16kHz.
-        results = model.transcribe(
-            processor=processor,
-            audio_files=[audio_path],
-            language=language,
-            compile=True if device == "cuda" else False,
-            pipeline_detokenization=True if os.name == "posix" else False
-        )
+        # The transcribe method internally handles the preprocessing and resampling to 16kHz if needed,
+        # but we can pass arrays directly now.
+        if audio_data is not None:
+            # Ensure it is a 1D array and in float32
+            if hasattr(audio_data, "flatten"):
+                audio_data = audio_data.flatten()
+            
+            results = model.transcribe(
+                processor=processor,
+                audio_arrays=[audio_data],
+                sample_rates=[sample_rate],
+                language=language,
+                compile=True if device == "cuda" else False,
+                pipeline_detokenization=True if os.name == "posix" else False
+            )
+        else:
+            results = model.transcribe(
+                processor=processor,
+                audio_files=[audio_path],
+                language=language,
+                compile=True if device == "cuda" else False,
+                pipeline_detokenization=True if os.name == "posix" else False
+            )
         
         if isinstance(results, list):
             transcription = " ".join(results)
