@@ -15,11 +15,22 @@ import warnings
 from transcribe2 import transcribe_audio, preload_model, get_model
 import json
 import tempfile
+import contextlib
 from pathlib import Path
 
-# Suppress ONNX warnings
-warnings.filterwarnings("ignore", message=".*Init provider bridge failed.*")
-warnings.filterwarnings("ignore", category=UserWarning)
+# Suppress ALSA/PortAudio error spam
+@contextlib.contextmanager
+def silence_stderr():
+    """Context manager to silence stderr at the OS level (hides C library errors)"""
+    new_target = os.open(os.devnull, os.O_WRONLY)
+    old_target = os.dup(sys.stderr.fileno())
+    try:
+        os.dup2(new_target, sys.stderr.fileno())
+        yield
+    finally:
+        os.dup2(old_target, sys.stderr.fileno())
+        os.close(new_target)
+        os.close(old_target)
 
 # Get appropriate directories for file storage
 def get_data_dir():
@@ -60,7 +71,8 @@ def find_device_index(name):
     if not name:
         return None
     try:
-        devices = sd.query_devices()
+        with silence_stderr():
+            devices = sd.query_devices()
         for i, d in enumerate(devices):
             if d['max_input_channels'] > 0 and name.lower() in d['name'].lower():
                 return i
@@ -115,9 +127,6 @@ def get_device():
     return device
 
 DEVICE = get_device()
-
-# Preload model at startup
-preload_thread = preload_model(device=DEVICE)
 
 # Audio buffering
 stop_recording = threading.Event()
@@ -384,21 +393,22 @@ def record_audio_stream(interactive_mode=False):
         nonlocal q
         frames = []
         try:
-            # Suppress ALSA/PortAudio errors if possible
-            with sd.InputStream(samplerate=rate, channels=CHANNELS, callback=callback, device=device_idx):
-                while not stop_recording.is_set():
-                    try:
-                        # Use a shorter timeout for better responsiveness to the stop event
-                        frames.append(q.get(timeout=0.05))
-                    except queue.Empty:
-                        continue
-                
-                # Drain any remaining frames in the queue
-                while not q.empty():
-                    try:
-                        frames.append(q.get_nowait())
-                    except queue.Empty:
-                        break
+            # Suppress ALSA/PortAudio errors at OS level
+            with silence_stderr():
+                with sd.InputStream(samplerate=rate, channels=CHANNELS, callback=callback, device=device_idx):
+                    while not stop_recording.is_set():
+                        try:
+                            # Use a shorter timeout for better responsiveness to the stop event
+                            frames.append(q.get(timeout=0.05))
+                        except queue.Empty:
+                            continue
+                    
+                    # Drain any remaining frames in the queue
+                    while not q.empty():
+                        try:
+                            frames.append(q.get_nowait())
+                        except queue.Empty:
+                            break
             return frames
         except Exception as e:
             # If it's specifically a sample rate error, we'll try a fallback in the parent
@@ -423,7 +433,8 @@ def record_audio_stream(interactive_mode=False):
     # If it failed, try current device with its default sample rate
     if frames is None:
         try:
-            device_info = sd.query_devices(INPUT_DEVICE_INDEX)
+            with silence_stderr():
+                device_info = sd.query_devices(INPUT_DEVICE_INDEX)
             default_rate = int(device_info['default_samplerate'])
             if default_rate != RATE:
                 print(f"⚠️ {RATE}Hz failed on '{device_info['name']}', trying default {default_rate}Hz...")
@@ -447,7 +458,8 @@ def record_audio_stream(interactive_mode=False):
             # If secondary standard rate fails, try its default rate
             if frames is None:
                 try:
-                    device_info = sd.query_devices(fallback_idx)
+                    with silence_stderr():
+                        device_info = sd.query_devices(fallback_idx)
                     default_rate = int(device_info['default_samplerate'])
                     if default_rate != RATE:
                         print(f"⚠️ {RATE}Hz failed on secondary, trying default {default_rate}Hz...")
@@ -470,7 +482,8 @@ def record_audio_stream(interactive_mode=False):
     # Update the last used device name for reporting
     try:
         if INPUT_DEVICE_INDEX is not None:
-            name = sd.query_devices(INPUT_DEVICE_INDEX)['name']
+            with silence_stderr():
+                name = sd.query_devices(INPUT_DEVICE_INDEX)['name']
             LAST_USED_DEVICE_NAME = name
     except:
         pass
@@ -574,6 +587,9 @@ def main():
     print("T2 Transcription Tool (Optimized)")
     print(f"Using device: {DEVICE}")
     load_audio_config()
+    
+    # Preload model at startup
+    preload_thread = preload_model(device=DEVICE)
     
     if preload_thread.is_alive():
         print("Waiting for model...")

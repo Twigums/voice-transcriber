@@ -308,12 +308,20 @@ class SimpleVoiceTranscriber:
             logger.error("💡 Install dependencies: pip install evdev python-uinput")
             return False
         
+        # Wait for model to load and warmup BEFORE starting the loop
+        if hasattr(self, 'preload_thread') and self.preload_thread.is_alive():
+            logger.info("⏳ Waiting for transcription model to initialize...")
+            self.preload_thread.join()
+            logger.info("✨ Model initialized and warmed up!")
+        
         logger.info("🎤 Voice Transcriber started!")
         logger.info(f"📱 Using device: {DEVICE}")
         logger.info("🔥 Hold Alt+Shift to record, release to transcribe")
         logger.info("⚙️  Press Ctrl+Alt+I to change input device")
         logger.info("🔄 Use Ctrl+C to exit")
-        logger.info("💡 Global hotkeys work even when Alacritty is in focus!")
+        
+        # Show ready state in terminal/notifications
+        self.visual_notification.hide_notification()
         
         self.running = True
         
