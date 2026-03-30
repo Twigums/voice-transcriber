@@ -35,6 +35,43 @@ To download the necessary models from Hugging Face, you need to provide your API
   - `t2.py` / `transcribe2.py`: Audio recording and transcription logic.
 - `tests/`: Feature parity tests.
 
+## 🧠 Codebase Context (for AI & Developers)
+
+This section provides a high-level overview of the project's architecture and technology stack to help AI models and developers understand the codebase quickly.
+
+- **Purpose**: Low-latency, privacy-focused voice transcription for Linux desktops (Wayland/X11).
+- **Tech Stack**: 
+  - **Core**: Python 3.x
+  - **Transcription Engine**: `Faster Whisper` (using `CohereLabs/cohere-transcribe-03-2026`).
+  - **Global Hotkeys**: `evdev` + `uinput` for Wayland-compatible global keyboard interception.
+  - **Audio Engine**: `PyAudio` / `sounddevice`.
+  - **Visuals**: `Tkinter` (overlays) or `zenity` (fallback) for desktop notifications.
+  - **Packaging**: `Nix` (Flakes) for reproducible builds and environments.
+- **Main Entry Points**:
+  - `src/main.py`: The main application loop and orchestration.
+  - `src/t2.py`: Optimized CLI-based recording and transcription script (standalone).
+- **Core Logic**:
+  - `src/transcribe2.py`: Model loading, pre-loading, and transcription execution.
+  - `src/hotkeys.py`: Low-level keyboard event handling and virtual keyboard device creation.
+  - `src/notifications.py`: Multi-platform notification logic (terminal + GUI).
+
+## 🤝 Contributing
+
+We welcome contributions from everyone and of any type! Whether you're fixing a bug, adding a feature, improving documentation, or just sharing an idea, your help is appreciated.
+
+### How to Contribute
+1. **Fork** the repository.
+2. **Create a branch** for your feature or fix.
+3. **Make your changes**.
+4. **Run tests** to ensure everything is working correctly (`nix run .#test`).
+5. **Submit a Pull Request** with a clear description of what you've done.
+
+We value all types of contributions, including:
+- **Code**: Bug fixes, new features, or performance improvements.
+- **Documentation**: Fixing typos, improving clarity, or adding examples.
+- **Feedback**: Reporting bugs or suggesting new features via Issues.
+- **Design**: Improving visual notifications or UI elements.
+
 ## Requirements
 - Linux (Wayland or X11)
 - Nix package manager
