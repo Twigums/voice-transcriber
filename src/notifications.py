@@ -130,11 +130,11 @@ class VisualNotification:
         self._create_overlay("⚡ PROCESSING", "#ffaa00", persistent=True)
         self._show_terminal_notification(f"⚡ {text}...")
     
-    def show_completed(self, text="COMPLETED"):
+    def show_completed(self, text="COMPLETED", sub_text=None):
         """Show a completion notification."""
         self._cleanup_overlays()
         self._create_overlay("✅ COMPLETED", "#00aaff", persistent=False)
-        self._show_terminal_notification(f"✅ {text}")
+        self._show_terminal_notification(f"✅ {text}", sub_text=sub_text)
         threading.Timer(2.0, self.hide_notification).start()
     
     def show_error(self, text="ERROR"):
@@ -275,7 +275,7 @@ if __name__ == "__main__":
                     pass
         self.overlay_processes = []
     
-    def _show_terminal_notification(self, text):
+    def _show_terminal_notification(self, text, sub_text=None):
         """Show a colorful terminal notification."""
         try:
             # Don't clear screen, just show a minimal notification
@@ -310,6 +310,13 @@ if __name__ == "__main__":
             main_text = text[:box_width - 4]  # Ensure text fits
             print(f"│ {symbol} {main_text:<{box_width-5}} │")
             
+            if sub_text:
+                # Truncate sub_text if too long
+                display_sub = sub_text
+                if len(display_sub) > box_width - 4:
+                    display_sub = display_sub[:box_width - 7] + "..."
+                print(f"│ {display_sub:<{box_width-2}} │")
+                
             print(f"└{border}┘\033[0m")
             
         except Exception as e:

@@ -173,9 +173,9 @@ class SimpleVoiceTranscriber:
                 import pyperclip
                 pyperclip.copy(transcription)
                 
-                # Show completion notification
+                # Show completion notification with the transcribed text
                 try:
-                    self.visual_notification.show_completed()
+                    self.visual_notification.show_completed(sub_text=transcription)
                 except Exception as e:
                     logger.warning(f"Visual notification error: {e}")
                 
