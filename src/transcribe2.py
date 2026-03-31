@@ -1,6 +1,7 @@
 # Optimized transcription with Cohere Transcribe model
 
 MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
+MODEL_REVISION = "499888924f5f1313b48ab0686c8f3a94178a4709"
 
 import warnings
 import threading
@@ -91,7 +92,7 @@ def check_auth():
     print(f"Access must be granted at: https://huggingface.co/CohereLabs/cohere-transcribe-03-2026\n")
     return False
 
-def load_model(model_id=MODEL_ID, device="cpu"):
+def load_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
     """Load model with optimized parameters for the current device"""
     token = get_token()
     
@@ -100,9 +101,10 @@ def load_model(model_id=MODEL_ID, device="cpu"):
     
     # Try loading from local cache first to avoid "checking for updates" network hit
     try:
-        print(f"🚀 Initializing Cohere model '{model_id}' (from cache)...")
+        print(f"🚀 Initializing Cohere model '{model_id}' (revision {revision[:7]}, from cache)...")
         processor = AutoProcessor.from_pretrained(
             model_id, 
+            revision=revision,
             trust_remote_code=True,
             token=token,
             local_files_only=True
@@ -115,6 +117,7 @@ def load_model(model_id=MODEL_ID, device="cpu"):
         
         model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_id,
+            revision=revision,
             dtype=dtype,
             trust_remote_code=True,
             token=token,
@@ -126,7 +129,7 @@ def load_model(model_id=MODEL_ID, device="cpu"):
     except Exception as e:
         # If local loading failed, we probably need to download or verify
         print(f"ℹ️ Model not in cache or update needed: {e}")
-        print(f"🚀 Downloading/Verifying Cohere model '{model_id}'...")
+        print(f"🚀 Downloading/Verifying Cohere model '{model_id}' (revision {revision[:7]})...")
         
         # Now check auth and login only when we actually need network
         check_auth()
@@ -135,6 +138,7 @@ def load_model(model_id=MODEL_ID, device="cpu"):
         try:
             processor = AutoProcessor.from_pretrained(
                 model_id, 
+                revision=revision,
                 trust_remote_code=True,
                 token=token
             )
@@ -145,6 +149,7 @@ def load_model(model_id=MODEL_ID, device="cpu"):
             
             model = AutoModelForSpeechSeq2Seq.from_pretrained(
                 model_id,
+                revision=revision,
                 dtype=dtype,
                 trust_remote_code=True,
                 token=token
@@ -170,24 +175,24 @@ def load_model(model_id=MODEL_ID, device="cpu"):
                     print(f"Current token (masked): {masked}")
             raise e
 
-def get_model(model_id=MODEL_ID, device="cpu"):
+def get_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
     """Get or initialize the model and processor singleton"""
     global _model, _processor
     
     with _model_lock:
         if _model is None:
             start_time = time.time()
-            _model, _processor = load_model(model_id, device)
+            _model, _processor = load_model(model_id, revision, device)
             elapsed = time.time() - start_time
             print(f"✅ Model loaded and ready in {elapsed:.2f} seconds")
     
     return _model, _processor
 
-def preload_model(model_id=MODEL_ID, device="cpu"):
+def preload_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
     """Preload the model in a background thread with a warmup call"""
     def _preload():
         try:
-            model, processor = get_model(model_id, device)
+            model, processor = get_model(model_id, revision, device)
             
             # Warmup call with 0.1s of silence to trigger compilation/optimization
             print("🔥 Warming up model (this may take a moment if compiling)...")

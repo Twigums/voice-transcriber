@@ -35,7 +35,7 @@ This section provides a high-level overview of the project's architecture and te
 - **Purpose**: Low-latency, privacy-focused voice transcription for Linux desktops (Wayland/X11).
 - **Tech Stack**: 
   - **Core**: Python 3.x
-  - **Transcription Engine**: `Faster Whisper` (using `CohereLabs/cohere-transcribe-03-2026`).
+  - **Transcription Engine**: `Faster Whisper` (using `CohereLabs/cohere-transcribe-03-2026`, pinned to revision `4998889`).
   - **Global Hotkeys**: `evdev` + `uinput` for Wayland-compatible global keyboard interception.
   - **Audio Engine**: `PyAudio` / `sounddevice`.
   - **Visuals**: `Tkinter` (overlays) or `zenity` (fallback) for desktop notifications.
