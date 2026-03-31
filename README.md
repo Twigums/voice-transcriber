@@ -22,7 +22,7 @@ To download the necessary models from Hugging Face, you need to provide your API
 **TODO**: Remove this requirement once the model is fully public and does not require access-based authentication.
 
 ## Features
-- **Global Hotkeys**: Hold `Alt+Shift` to record, release to transcribe.
+- **Global Hotkeys**: Hold `Alt+Shift` to record, release to transcribe & copy to clipboard.
 - **Visual Feedback**: visual overlays and terminal notifications.
 - **Low Latency**: Optimized for quick transcription.
 - **Privacy-focused**: Runs locally using Faster Whisper.

@@ -555,7 +555,6 @@ def record_and_transcribe():
     
     try:
         if transcription:
-            import pyperclip
             pyperclip.copy(transcription)
             print("Transcription copied to clipboard")
     except:

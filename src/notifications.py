@@ -278,8 +278,6 @@ if __name__ == "__main__":
     def _show_terminal_notification(self, text, sub_text=None):
         """Show a colorful terminal notification."""
         try:
-            # Don't clear screen, just show a minimal notification
-            
             # Choose colors based on text content
             if "RECORDING" in text.upper():
                 color_code = "\033[91m"  # Red
@@ -300,24 +298,21 @@ if __name__ == "__main__":
                 color_code = "\033[92m"  # Green
                 symbol = "ℹ️"
             
-            # Create minimal notification line
-            box_width = 70  # Increased width for device name
-            border = "─" * box_width
-            
-            print(f"\n{color_code}┌{border}┐")
-            
-            # Center the main text
-            main_text = text[:box_width - 4]  # Ensure text fits
-            print(f"│ {symbol} {main_text:<{box_width-5}} │")
-            
+            # For completion with sub_text (transcription), use a cleaner, non-boxed output
             if sub_text:
-                # Truncate sub_text if too long
-                display_sub = sub_text
-                if len(display_sub) > box_width - 4:
-                    display_sub = display_sub[:box_width - 7] + "..."
-                print(f"│ {display_sub:<{box_width-2}} │")
+                print(f"\n{color_code}{symbol} {text}\033[0m")
+                # Print the full transcription in white, no truncation
+                print(f"{sub_text}\n")
+            else:
+                # Create minimal notification line for status updates
+                box_width = 70
+                border = "─" * box_width
                 
-            print(f"└{border}┘\033[0m")
+                print(f"\n{color_code}┌{border}┐")
+                # Center the main text
+                main_text = text[:box_width - 4]  # Ensure text fits
+                print(f"│ {symbol} {main_text:<{box_width-5}} │")
+                print(f"└{border}┘\033[0m")
             
         except Exception as e:
             logger.debug(f"Terminal notification failed: {e}")

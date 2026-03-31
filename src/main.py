@@ -10,6 +10,7 @@ import subprocess
 import time
 import os
 import sys
+import pyperclip
 import atexit
 
 # Import core modules
@@ -171,13 +172,18 @@ class SimpleVoiceTranscriber:
             transcription = result.strip()
             
             if transcription:
-                # Output the transcription based on mode
-                if self.copy_to_clipboard:
-                    # Copy to clipboard
-                    import pyperclip
+                # Always copy to clipboard (requested: even on normal Alt+Shift)
+                try:
                     pyperclip.copy(transcription)
-                    logger.info(f"✅ Copied to clipboard: {transcription}")
-                else:
+                    if self.copy_to_clipboard:
+                        logger.info(f"✅ Copied to clipboard: {transcription}")
+                    else:
+                        logger.info(f"📋 Copied to clipboard & typing: {transcription}")
+                except Exception as e:
+                    logger.error(f"Error copying to clipboard: {e}")
+
+                # Output the transcription based on mode
+                if not self.copy_to_clipboard:
                     # Type the text directly
                     try:
                         # CRITICAL: Wait for all modifiers to be released to avoid triggering shortcuts
@@ -196,10 +202,8 @@ class SimpleVoiceTranscriber:
                             raise Exception("uinput typing failed or not available")
                     except Exception as e:
                         logger.error(f"Error typing transcription: {e}")
-                        # Fallback to clipboard on error
-                        import pyperclip
-                        pyperclip.copy(transcription)
-                        logger.info(f"⚠️ Fallback: Copied to clipboard instead: {transcription}")
+                        # Fallback info (it's already in clipboard)
+                        logger.info(f"⚠️ Typing failed, but it's available in your clipboard")
                 
                 # Show completion notification with the transcribed text
                 try:
@@ -215,7 +219,9 @@ class SimpleVoiceTranscriber:
                 except:
                     pass
                 
-                logger.info(f"✅ Transcribed: {transcription}")
+                # We already printed the transcription via show_completed (terminal mode)
+                # but let's ensure it's also in the log for history (at a higher level or just use print)
+                # logger.info(f"✅ Transcribed: {transcription}")
             else:
                 # Hide processing notification
                 try:
@@ -344,8 +350,8 @@ class SimpleVoiceTranscriber:
         
         logger.info("🎤 Voice Transcriber started!")
         logger.info(f"📱 Using device: {DEVICE}")
-        logger.info("🔥 Hold Alt+Shift to record, release to TYPE")
-        logger.info("📋 Hold Ctrl+Alt+Shift to record, release to COPY")
+        logger.info("🔥 Hold Alt+Shift to record, release to TYPE & COPY")
+        logger.info("📋 Hold Ctrl+Alt+Shift to record, release to ONLY COPY")
         logger.info("⚙️  Press Ctrl+Alt+I to change input device")
         logger.info("🔄 Use Ctrl+C to exit")
         
