@@ -6,6 +6,7 @@ Test file to verify model switching between Cohere and Whisper backends.
 import sys
 import os
 import unittest
+import json
 from unittest.mock import patch, MagicMock
 
 # Add src to path
@@ -66,7 +67,7 @@ class TestModelSwitching(unittest.TestCase):
         }
         
         with patch('pathlib.Path.exists', return_value=True):
-            with patch('builtins.open', unittest.mock.mock_open(read_data=unittest.mock.json.dumps(config_data))):
+            with patch('builtins.open', unittest.mock.mock_open(read_data=json.dumps(config_data))):
                 t2.load_audio_config()
                 
         self.assertEqual(t2.MODEL_BACKEND, 'whisper')

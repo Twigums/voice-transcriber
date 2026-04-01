@@ -12,11 +12,22 @@ import numpy as np
 import sounddevice as sd
 import soundfile as sf
 import warnings
-from transcribe2 import transcribe_audio, preload_model, get_model
+from transcribe2 import transcribe_audio, get_model
+import transcribe2
 import json
 import tempfile
 import contextlib
 from pathlib import Path
+
+# Tracking the most recent model preload thread
+# This allows the main app to wait for it before recording
+active_preload_thread = None
+
+def preload_model(device="cpu"):
+    """Wrapper for preloading models that tracks the thread"""
+    global active_preload_thread
+    active_preload_thread = transcribe2.preload_model(device=device)
+    return active_preload_thread
 
 # Suppress ALSA/PortAudio error spam
 @contextlib.contextmanager
@@ -271,7 +282,7 @@ def select_audio_device():
     print(f"s. Use Secondary Device (Manual Override){s_marker}")
     print(f"a. Automatic Selection (Default){a_marker}")
     print("-" * 30)
-    print("c. Cancel")
+    print("c. Cancel (or Enter to Save & Exit)")
     
     print("\nYour choice: ", end="", flush=True)
     choice = getch()
@@ -280,6 +291,11 @@ def select_audio_device():
     if choice.lower() == 'c': 
         reset_terminal()
         return False
+    
+    if choice in ['\r', '\n', '']:
+        reset_terminal()
+        return True
+    
     if choice.lower() == 'r':
         reset_terminal()
         return select_audio_device()

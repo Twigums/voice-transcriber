@@ -87,9 +87,17 @@ class SimpleVoiceTranscriber:
             return
             
         # Wait for model to load if still loading
+        # Check both the instance's initial thread and t2's global active thread (for backend switches)
+        import t2
+        current_thread = getattr(t2, 'active_preload_thread', None)
+        
         if hasattr(self, 'preload_thread') and self.preload_thread.is_alive():
-            logger.info("Waiting for model to load...")
+            logger.info("⏳ Waiting for transcription model to finish loading...")
             self.preload_thread.join()
+        
+        if current_thread and current_thread.is_alive():
+            logger.info("⏳ Waiting for new transcription model to finish loading...")
+            current_thread.join()
         
         self.recording = True
         self.start_time = time.time()
@@ -101,106 +109,74 @@ class SimpleVoiceTranscriber:
         self.record_thread.daemon = True
         self.record_thread.start()
         
-        # Show visual notification and play sound in background
-        def notify_async():
-            if not self.recording:
-                return
-            try:
-                # Update device name before showing notification
-                self.visual_notification.set_active_device(get_active_device_name())
-                self.visual_notification.show_recording()
-            except Exception as e:
-                logger.warning(f"Visual notification error: {e}")
-            
-            try:
-                if not t2.IS_MUTED:
-                    sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-                    subprocess.Popen(['mpg123', '-q', sound_path], 
-                                   stderr=subprocess.DEVNULL)
-            except:
-                pass
+        # Update notification
+        self.visual_notification.show_recording()
         
-        threading.Thread(target=notify_async, daemon=True).start()
+        # Play sound
+        try:
+            if not t2.IS_MUTED:
+                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/start.mp3')
+                subprocess.Popen(['mpg123', '-q', sound_path], 
+                               stderr=subprocess.DEVNULL)
+        except:
+            pass
 
     def stop_recording(self, copy_to_clipboard=False):
-        """Stop recording and process audio"""
+        """Stop recording and start processing"""
         if not self.recording:
             return
             
         self.recording = False
-        duration = time.time() - self.start_time
         self.copy_to_clipboard = copy_to_clipboard
         stop_recording.set()
         
-        # If recording was too short, discard it
-        if duration < 1.0:
-            logger.info(f"Discarding short recording ({duration:.2f}s)")
-            if self.record_thread:
-                self.record_thread.join()
-            
-            # Hide notification after a small delay to avoid flicker
-            def hide_async():
-                time.sleep(0.3)
-                try:
-                    self.visual_notification.hide_notification()
-                except:
-                    pass
-            threading.Thread(target=hide_async, daemon=True).start()
-            return
-            
-        # Show processing notification and sound in background
-        def notify_stop_async():
-            try:
-                self.visual_notification.show_processing()
-            except Exception as e:
-                logger.warning(f"Visual notification error: {e}")
-            
-            try:
-                if not t2.IS_MUTED:
-                    sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-                    subprocess.Popen(['mpg123', '-q', sound_path], 
-                                   stderr=subprocess.DEVNULL)
-            except:
-                pass
-        
-        threading.Thread(target=notify_stop_async, daemon=True).start()
-        
-        # Wait for recording to finish and start processing
         if self.record_thread:
             self.record_thread.join()
-        
-        self.process_thread = threading.Thread(target=self.process_and_transcribe)
+            
+        # Start processing in a separate thread
+        self.process_thread = threading.Thread(target=self.process_recording)
         self.process_thread.daemon = True
         self.process_thread.start()
 
     def record_audio(self):
-        """Record audio using t2"""
+        """Recording worker thread"""
         try:
-            # We strictly don't use interactive mode here as we control start/stop via hotkeys
-            self.audio_frames = record_audio_stream(interactive_mode=False)
+            self.audio_frames = record_audio_stream()
         except Exception as e:
             logger.error(f"Recording error: {e}")
+            self.recording = False
 
-    def process_and_transcribe(self):
-        """Process recorded audio and transcribe"""
-        try:
-            # Check if we have audio
-            if self.audio_frames.size == 0:
-                logger.warning("No audio frames recorded")
+    def process_recording(self):
+        """Process the recorded audio frames"""
+        if self.audio_frames is None or self.audio_frames.size == 0:
+            # Hide recording notification
+            try:
                 self.visual_notification.hide_notification()
-                return
+            except Exception as e:
+                logger.warning(f"Visual notification error: {e}")
                 
-            # Double check duration based on actual samples (use t2.ACTUAL_RATE)
-            # This handles cases where stop_recording might have been slightly over 1s 
-            # but the audio buffer didn't capture enough
-            actual_duration = self.audio_frames.size / t2.ACTUAL_RATE
-            if actual_duration < 0.8:
-                logger.info(f"Discarding audio: too short ({actual_duration:.2f}s)")
-                try:
-                    self.visual_notification.hide_notification()
-                except:
-                    pass
-                return
+            duration = time.time() - self.start_time
+            if duration < 0.3:
+                # Just a tap, maybe show settings or ignore
+                pass
+            else:
+                logger.info("❌ No audio recorded")
+                # Offer to change audio device
+                self.offer_device_change()
+            return
+            
+        logger.info("🔄 Processing recording...")
+        self.visual_notification.show_processing()
+        
+        try:
+            # Double check if we need to wait for model (should be already joined in start_recording)
+            import t2
+            current_thread = getattr(t2, 'active_preload_thread', None)
+            if current_thread and current_thread.is_alive():
+                logger.info("⏳ Still waiting for transcription model...")
+                current_thread.join()
+            if hasattr(self, 'preload_thread') and self.preload_thread.is_alive():
+                self.preload_thread.join()
 
             # Process the audio
             result, transcribe_time = process_audio_stream(self.audio_frames)
@@ -277,9 +253,6 @@ class SimpleVoiceTranscriber:
                 except:
                     pass
                 
-                # We already printed the transcription via show_completed (terminal mode)
-                # but let's ensure it's also in the log for history (at a higher level or just use print)
-                # logger.info(f"✅ Transcribed: {transcription}")
             else:
                 # Hide processing notification
                 try:
@@ -298,6 +271,7 @@ class SimpleVoiceTranscriber:
                 self.visual_notification.hide_notification()
             except Exception as e2:
                 logger.warning(f"Visual notification error: {e2}")
+            
             logger.error(f"Transcription error: {e}")
             
             # Also offer device change on error
@@ -307,7 +281,7 @@ class SimpleVoiceTranscriber:
         """Offer to change audio device after failed recording"""
         logger.info("")
         logger.info("🔧 What would you like to do?")
-        logger.info("   Space: Try recording again")
+        logger.info("   Space/Enter: Try recording again")
         logger.info("   i: Change audio input device")
         logger.info("   r: Reset terminal & clipboard (if things are wonky)")
         logger.info("   Any other key: Continue")
@@ -324,11 +298,12 @@ class SimpleVoiceTranscriber:
             finally:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             
-            if ch == ' ':  # Space key
+            if ch in [' ', '\r', '\n']:  # Space or Enter
                 logger.info("🎤 Ready to record - hold Alt+Shift when ready")
             elif ch.lower() == 'i':  # Input device selection
                 logger.info("🎤 Opening audio device selection...")
-                if select_audio_device():
+                result = select_audio_device()
+                if result:
                     logger.info("✅ Audio device updated!")
                 else:
                     logger.info("❌ Device selection cancelled.")
@@ -348,7 +323,7 @@ class SimpleVoiceTranscriber:
         except ImportError:
             # Windows fallback - use regular input
             try:
-                choice = input("Enter choice (Space/i/r/other): ").strip().lower()
+                choice = input("Enter choice (Space/Enter/i/r/other): ").strip().lower()
                 if choice == ' ' or choice == '':
                     logger.info("🎤 Ready to record - hold Alt+Shift when ready")
                 elif choice == 'i':
@@ -468,83 +443,17 @@ if __name__ == "__main__":
                     except:
                         group_names.append(str(gid))
                 
-                logger.error("❌ Permission issue detected!")
-                logger.error(f"👤 Current user: {current_user}")
-                logger.error(f"👥 Active groups: {', '.join(group_names)}")
-                logger.error(f"🔢 Input group GID: {input_group.gr_gid} (not in active groups)")
-                logger.error("")
-                logger.error("🔧 To fix this issue, choose one of these options:")
-                logger.error("")
-                logger.error("   Option 1 (Recommended): Add user to input group")
-                logger.error("   sudo usermod -a -G input $USER")
-                logger.error("   Then log out and back in (or reboot)")
-                logger.error("")
-                logger.error("   Option 2: Run as root (less secure)")
-                logger.error("   sudo nix-shell --run 'python3 app/simple_voice_transcriber.py'")
-                logger.error("")
-                logger.error("🔍 Why this is needed:")
-                logger.error("   Global hotkeys on Wayland require direct access to input devices")
-                logger.error("   This bypasses application-level input restrictions")
-                logger.error("   Works even when Alacritty or other apps are focused")
-                logger.error("")
+                logger.error(f"❌ User {current_user} is NOT in the 'input' group.")
+                logger.error(f"💡 Current groups: {', '.join(group_names)}")
+                logger.error(f"💡 Run: sudo usermod -aG input {current_user}")
+                logger.error("💡 Then LOG OUT and LOG BACK IN for changes to take effect.")
                 return False
-                
         except Exception as e:
-            logger.error(f"❌ Error checking permissions: {e}")
-            logger.error("💡 Try running as root: sudo nix-shell --run 'python3 app/simple_voice_transcriber.py'")
+            logger.error(f"Error checking permissions: {e}")
             return False
-    
-    def check_input_devices():
-        """Check if input devices are accessible"""
-        try:
-            import evdev
-            devices = evdev.list_devices()
-            if not devices:
-                logger.error("❌ No input devices found")
-                return False
-            
-            # Try to access at least one device
-            for device_path in devices:
-                try:
-                    device = evdev.InputDevice(device_path)
-                    device.close()
-                    logger.info(f"✅ Input devices accessible ({len(devices)} found)")
-                    return True
-                except PermissionError:
-                    continue
-            
-            logger.error("❌ Input devices found but not accessible due to permissions")
-            return False
-            
-        except ImportError:
-            logger.error("❌ evdev not available")
-            return False
-        except Exception as e:
-            logger.error(f"❌ Error checking input devices: {e}")
-            return False
-    
-    # Perform comprehensive checks
-    logger.info("🔍 Checking system requirements...")
-    
-    permissions_ok = check_permissions()
-    devices_ok = check_input_devices() if permissions_ok else False
-    
-    if not permissions_ok:
-        logger.error("")
-        logger.error("⚠️  Cannot start voice transcriber due to permission issues")
-        logger.error("📖 Follow the instructions above to fix permissions")
+
+    if check_permissions():
+        app = SimpleVoiceTranscriber()
+        app.run()
+    else:
         sys.exit(1)
-    
-    if not devices_ok:
-        logger.error("")
-        logger.error("⚠️  Cannot access input devices")
-        logger.error("💡 Make sure input devices are connected and accessible")
-        sys.exit(1)
-    
-    logger.info("✅ All system checks passed!")
-    logger.info("")
-    
-    transcriber = SimpleVoiceTranscriber()
-    import atexit
-    atexit.register(transcriber.cleanup)
-    transcriber.run()
