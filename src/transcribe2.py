@@ -37,6 +37,10 @@ def set_backend(backend_name):
         _current_backend_name = backend_name.lower()
         _backend = None # Force reload on next call
         logger.info(f"Backend switched to {_current_backend_name}")
+        
+        # Force garbage collection after unloading
+        import gc
+        gc.collect()
 
 def preload_model(device="cpu"):
     return get_backend().preload_model(device=device)

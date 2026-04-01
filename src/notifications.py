@@ -60,6 +60,7 @@ class VisualNotification:
         self.display_env = self._detect_display_environment()
         self.available_tools = self._detect_available_tools()
         self.active_device = None
+        self._notification_timers = []  # Track timers for cleanup
         
         if enable_logging:
             logger.info(f"Display environment: {self.display_env}")
@@ -135,21 +136,27 @@ class VisualNotification:
         self._cleanup_overlays()
         self._create_overlay("✅ COMPLETED", "#00aaff", persistent=False)
         self._show_terminal_notification(f"✅ {text}", sub_text=sub_text)
-        threading.Timer(2.0, self.hide_notification).start()
+        timer = threading.Timer(2.0, self.hide_notification)
+        timer.start()
+        self._notification_timers.append(timer)
     
     def show_error(self, text="ERROR"):
         """Show an error notification."""
         self._cleanup_overlays()
         self._create_overlay("❌ ERROR", "#ff0000", persistent=False)
         self._show_terminal_notification(f"❌ {text}")
-        threading.Timer(3.0, self.hide_notification).start()
+        timer = threading.Timer(3.0, self.hide_notification)
+        timer.start()
+        self._notification_timers.append(timer)
     
     def show_warning(self, text="WARNING"):
         """Show a warning notification."""
         self._cleanup_overlays()
         self._create_overlay("⚠️ WARNING", "#ff8800", persistent=False)
         self._show_terminal_notification(f"⚠️ {text}")
-        threading.Timer(3.0, self.hide_notification).start()
+        timer = threading.Timer(3.0, self.hide_notification)
+        timer.start()
+        self._notification_timers.append(timer)
     
     def _create_overlay(self, text, color, persistent=False):
         """Create a visual overlay using the best available method."""
@@ -339,6 +346,12 @@ if __name__ == "__main__":
     
     def cleanup(self):
         """Clean up all resources and processes."""
+        for timer in self._notification_timers:
+            try:
+                timer.cancel()
+            except:
+                pass
+        self._notification_timers = []
         self.hide_notification()
         self._cleanup_overlays()
 

@@ -367,5 +367,13 @@ class WaylandGlobalHotkeys:
     def stop(self):
         """Stop the hotkey monitoring"""
         self.running = False
+        # Properly close all device file descriptors
+        for device in self.devices:
+            try:
+                device.close()
+            except:
+                pass
+        self.devices = []
+        self.key_states.clear()  # Clear key states
         if self.virtual_keyboard:
             self.virtual_keyboard.destroy()

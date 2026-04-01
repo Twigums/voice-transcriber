@@ -619,6 +619,14 @@ def process_audio_stream(audio_data=None):
     except Exception as e:
         print(f"Processing error: {e}")
         result = ""
+    finally:
+        # Explicitly free audio data memory
+        if audio_data is not None and hasattr(audio_data, 'reshape'):
+            try:
+                audio_data = audio_data.reshape(0)
+            except:
+                pass
+        del audio_data
         
     transcribe_end_time = time.time()
     

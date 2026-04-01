@@ -266,10 +266,20 @@ def unload_model():
     with _model_lock:
         if _model is not None:
             print("📤 Unloading Cohere model...")
+            _model.cpu()
+            del _model
             _model = None
+            del _processor
             _processor = None
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             import gc
             gc.collect()
             print("✅ Cohere model unloaded.")
+            
+            # Force CUDA synchronization for complete cleanup
+            try:
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+            except:
+                pass

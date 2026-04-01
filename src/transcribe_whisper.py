@@ -121,6 +121,7 @@ def unload_model():
     with _model_lock:
         if _model is not None:
             print("📤 Unloading Whisper model...")
+            del _model
             _model = None
             try:
                 import torch
@@ -131,3 +132,11 @@ def unload_model():
             import gc
             gc.collect()
             print("✅ Whisper model unloaded.")
+            
+            # Force CUDA garbage collection
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+            except:
+                pass

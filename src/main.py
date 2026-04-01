@@ -184,6 +184,10 @@ class SimpleVoiceTranscriber:
             # Clean up result
             transcription = result.strip()
             
+            # Explicitly free the audio data memory after processing
+            del self.audio_frames
+            self.audio_frames = []
+            
             if transcription:
                 # Copy to clipboard if enabled in settings
                 from t2 import COPY_TO_CLIPBOARD
