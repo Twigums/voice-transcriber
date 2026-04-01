@@ -20,6 +20,7 @@ from hotkeys import WaylandGlobalHotkeys
 # Import transcription functionality
 # Ensure we can find t2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+import t2
 from t2 import (
     preload_model, DEVICE, record_audio_stream, process_audio_stream, 
     stop_recording, load_audio_config, select_audio_device, 
@@ -38,6 +39,7 @@ class SimpleVoiceTranscriber:
         self.running = False
         self.audio_frames = []
         self.copy_to_clipboard = False
+        self.start_time = 0
         
         # Load saved audio device configuration
         load_audio_config()
@@ -89,6 +91,7 @@ class SimpleVoiceTranscriber:
             self.preload_thread.join()
         
         self.recording = True
+        self.start_time = time.time()
         stop_recording.clear()
         self.audio_frames = []
         
@@ -99,6 +102,8 @@ class SimpleVoiceTranscriber:
         
         # Show visual notification and play sound in background
         def notify_async():
+            if not self.recording:
+                return
             try:
                 # Update device name before showing notification
                 self.visual_notification.set_active_device(get_active_device_name())
@@ -121,9 +126,26 @@ class SimpleVoiceTranscriber:
             return
             
         self.recording = False
+        duration = time.time() - self.start_time
         self.copy_to_clipboard = copy_to_clipboard
         stop_recording.set()
         
+        # If recording was too short, discard it
+        if duration < 1.0:
+            logger.info(f"Discarding short recording ({duration:.2f}s)")
+            if self.record_thread:
+                self.record_thread.join()
+            
+            # Hide notification after a small delay to avoid flicker
+            def hide_async():
+                time.sleep(0.3)
+                try:
+                    self.visual_notification.hide_notification()
+                except:
+                    pass
+            threading.Thread(target=hide_async, daemon=True).start()
+            return
+            
         # Show processing notification and sound in background
         def notify_stop_async():
             try:
@@ -163,6 +185,18 @@ class SimpleVoiceTranscriber:
             if self.audio_frames.size == 0:
                 logger.warning("No audio frames recorded")
                 self.visual_notification.hide_notification()
+                return
+                
+            # Double check duration based on actual samples (use t2.ACTUAL_RATE)
+            # This handles cases where stop_recording might have been slightly over 1s 
+            # but the audio buffer didn't capture enough
+            actual_duration = self.audio_frames.size / t2.ACTUAL_RATE
+            if actual_duration < 0.8:
+                logger.info(f"Discarding audio: too short ({actual_duration:.2f}s)")
+                try:
+                    self.visual_notification.hide_notification()
+                except:
+                    pass
                 return
 
             # Process the audio
