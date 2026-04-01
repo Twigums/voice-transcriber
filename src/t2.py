@@ -15,11 +15,22 @@ import warnings
 from transcribe2 import transcribe_audio, preload_model, get_model
 import json
 import tempfile
+import contextlib
 from pathlib import Path
 
-# Suppress ONNX warnings
-warnings.filterwarnings("ignore", message=".*Init provider bridge failed.*")
-warnings.filterwarnings("ignore", category=UserWarning)
+# Suppress ALSA/PortAudio error spam
+@contextlib.contextmanager
+def silence_stderr():
+    """Context manager to silence stderr at the OS level (hides C library errors)"""
+    new_target = os.open(os.devnull, os.O_WRONLY)
+    old_target = os.dup(sys.stderr.fileno())
+    try:
+        os.dup2(new_target, sys.stderr.fileno())
+        yield
+    finally:
+        os.dup2(old_target, sys.stderr.fileno())
+        os.close(new_target)
+        os.close(old_target)
 
 # Get appropriate directories for file storage
 def get_data_dir():
@@ -45,12 +56,16 @@ def get_temp_dir():
 
 # Audio configuration
 CHANNELS = 1
-RATE = 48000
+RATE = 16000
 RECORD_SECONDS = 20
 INPUT_DEVICE_INDEX = None
 PRIMARY_DEVICE_NAME = None
 SECONDARY_DEVICE_NAME = None
+LAST_USED_DEVICE_NAME = "Unknown"
+ACTUAL_RATE = RATE
 OVERRIDE_MODE = 'auto' # 'auto', 'primary', or 'secondary'
+MODEL_BACKEND = 'cohere' # 'cohere' or 'whisper'
+COPY_TO_CLIPBOARD = True
 IS_MUTED = False
 CONFIG_FILE = get_data_dir() / 'audio_device_config.json'
 
@@ -58,11 +73,39 @@ def find_device_index(name):
     """Find device index by name substring match"""
     if not name:
         return None
-    devices = sd.query_devices()
-    for i, d in enumerate(devices):
-        if d['max_input_channels'] > 0 and name.lower() in d['name'].lower():
-            return i
+    try:
+        with silence_stderr():
+            devices = sd.query_devices()
+        for i, d in enumerate(devices):
+            if d['max_input_channels'] > 0 and name.lower() in d['name'].lower():
+                return i
+    except Exception:
+        pass
     return None
+
+def get_active_device_name():
+    """Return the name of the device that will be used or was last used"""
+    global LAST_USED_DEVICE_NAME
+    
+    model_info = f"[{MODEL_BACKEND.capitalize()}] "
+    
+    if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
+        return f"{model_info}Primary: {PRIMARY_DEVICE_NAME}"
+    elif OVERRIDE_MODE == 'secondary' and SECONDARY_DEVICE_NAME:
+        return f"{model_info}Secondary: {SECONDARY_DEVICE_NAME}"
+    
+    # In auto mode, try to find what would be used
+    if PRIMARY_DEVICE_NAME:
+        idx = find_device_index(PRIMARY_DEVICE_NAME)
+        if idx is not None:
+            return f"{model_info}Primary: {PRIMARY_DEVICE_NAME}"
+    
+    if SECONDARY_DEVICE_NAME:
+        idx = find_device_index(SECONDARY_DEVICE_NAME)
+        if idx is not None:
+            return f"{model_info}Secondary: {SECONDARY_DEVICE_NAME} (Fallback)"
+            
+    return f"{model_info}{LAST_USED_DEVICE_NAME}"
 
 def reset_terminal():
     """Reset terminal settings and clipboard processes if they become wonky"""
@@ -101,15 +144,14 @@ def get_device():
 
 DEVICE = get_device()
 
-# Preload model at startup
-preload_thread = preload_model(device=DEVICE)
-
 # Audio buffering
 stop_recording = threading.Event()
 
+import transcribe2
+
 def load_audio_config():
     """Load audio device configuration from local file with fallback"""
-    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE, IS_MUTED
+    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE, MODEL_BACKEND, COPY_TO_CLIPBOARD, IS_MUTED
     try:
         if CONFIG_FILE.exists():
             with open(CONFIG_FILE, 'r') as f:
@@ -118,6 +160,11 @@ def load_audio_config():
                 SECONDARY_DEVICE_NAME = config.get('secondary_device_name')
                 OVERRIDE_MODE = config.get('override_mode', 'auto')
                 IS_MUTED = config.get('is_muted', False)
+                MODEL_BACKEND = config.get('model_backend', 'cohere')
+                COPY_TO_CLIPBOARD = config.get('copy_to_clipboard', True)
+                
+                # Update backend in transcribe2
+                transcribe2.set_backend(MODEL_BACKEND)
                 
                 # If we have an override, try that first
                 if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
@@ -173,7 +220,9 @@ def save_audio_config():
             'primary_device_name': PRIMARY_DEVICE_NAME,
             'secondary_device_name': SECONDARY_DEVICE_NAME,
             'override_mode': OVERRIDE_MODE,
-            'is_muted': IS_MUTED
+            'is_muted': IS_MUTED,
+            'model_backend': MODEL_BACKEND,
+            'copy_to_clipboard': COPY_TO_CLIPBOARD
         }
         with open(CONFIG_FILE, 'w') as f:
             f.write(json.dumps(config, indent=2))
@@ -183,12 +232,16 @@ def save_audio_config():
 
 def select_audio_device():
     """Interactive audio device selection with Primary/Secondary support"""
-    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE, IS_MUTED
+    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE, MODEL_BACKEND, COPY_TO_CLIPBOARD, IS_MUTED
     
     # Always reset terminal before interaction to fix terminal state
     reset_terminal() 
     
-    print("\n🎤 Configure Audio Input Devices:")
+    print("\n🎤 Voice Transcriber Configuration:")
+    
+    # Display current status
+    print(f"Current Model: {MODEL_BACKEND.capitalize()}")
+    print(f"Clipboard Auto-Copy: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
     
     # Display current mode status
     mode_display = {
@@ -196,7 +249,7 @@ def select_audio_device():
         'primary': "Manual Override (Primary)",
         'secondary': "Manual Override (Secondary)"
     }.get(OVERRIDE_MODE, "Unknown")
-    print(f"Current Mode: {mode_display}")
+    print(f"Audio Mode: {mode_display}")
     
     mute_status = " [MUTED]" if IS_MUTED else ""
     print(f"Sounds: {'Muted' if IS_MUTED else 'On'}{mute_status}")
@@ -205,6 +258,8 @@ def select_audio_device():
     print("P. Set Primary Device (currently: {})".format(PRIMARY_DEVICE_NAME or "Not Set"))
     print("S. Set Secondary Device (currently: {})".format(SECONDARY_DEVICE_NAME or "Not Set"))
     print("M. Toggle Mute (currently: {})".format("MUTED" if IS_MUTED else "Sound On"))
+    print("B. Switch Model Backend (cohere/whisper)")
+    print("V. Toggle Clipboard Auto-Copy")
     print("R. Reset Terminal (if text is invisible or wonky)")
     print("-" * 30)
     
@@ -228,11 +283,36 @@ def select_audio_device():
     if choice.lower() == 'r':
         reset_terminal()
         return select_audio_device()
+    
     if choice.lower() == 'm':
         IS_MUTED = not IS_MUTED
         print(f"✅ Sounds {'Muted' if IS_MUTED else 'Enabled'}")
         save_audio_config()
-        # Stay in the menu after toggling mute
+        reset_terminal()
+        return select_audio_device()
+    
+    if choice == 'V':
+        COPY_TO_CLIPBOARD = not COPY_TO_CLIPBOARD
+        print(f"✅ Clipboard Auto-Copy set to: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
+        save_audio_config()
+        reset_terminal()
+        return select_audio_device()
+    
+    if choice == 'B':
+        if MODEL_BACKEND == 'cohere':
+            MODEL_BACKEND = 'whisper'
+        else:
+            MODEL_BACKEND = 'cohere'
+        print(f"✅ Model backend set to: {MODEL_BACKEND}")
+        transcribe2.set_backend(MODEL_BACKEND)
+        save_audio_config()
+        
+        # Always preload the new model automatically
+        print(f"🚀 Preloading {MODEL_BACKEND.capitalize()} model in background...")
+        preload_model(device=DEVICE)
+        
+        time.sleep(1) # Brief pause to show message
+        reset_terminal()
         return select_audio_device()
         
     if choice == 'p':
@@ -332,7 +412,7 @@ def select_audio_device():
 
 def record_audio_stream(interactive_mode=False):
     """Record audio using sounddevice with fallback and auto-recovery support"""
-    global INPUT_DEVICE_INDEX
+    global INPUT_DEVICE_INDEX, ACTUAL_RATE, LAST_USED_DEVICE_NAME
     
     # Manual Override Logic
     if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
@@ -377,19 +457,29 @@ def record_audio_stream(interactive_mode=False):
             print(status, file=sys.stderr)
         q.put(indata.copy())
 
-    def perform_recording(device_idx):
+    def perform_recording(device_idx, rate):
         nonlocal q
         frames = []
         try:
-            with sd.InputStream(samplerate=RATE, channels=CHANNELS, callback=callback, device=device_idx):
-                while not stop_recording.is_set():
-                    try:
-                        frames.append(q.get(timeout=0.2))
-                    except queue.Empty:
-                        continue
+            # Suppress ALSA/PortAudio errors at OS level
+            with silence_stderr():
+                with sd.InputStream(samplerate=rate, channels=CHANNELS, callback=callback, device=device_idx):
+                    while not stop_recording.is_set():
+                        try:
+                            # Use a shorter timeout for better responsiveness to the stop event
+                            frames.append(q.get(timeout=0.05))
+                        except queue.Empty:
+                            continue
+                    
+                    # Drain any remaining frames in the queue
+                    while not q.empty():
+                        try:
+                            frames.append(q.get_nowait())
+                        except queue.Empty:
+                            break
             return frames
         except Exception as e:
-            print(f"Error opening audio device {device_idx}: {e}")
+            # If it's specifically a sample rate error, we'll try a fallback in the parent
             return None
 
     # Interactive mode helpers
@@ -405,15 +495,48 @@ def record_audio_stream(interactive_mode=False):
         print("Recording... Press Space to stop")
     
     # Try primary/current device
-    frames = perform_recording(INPUT_DEVICE_INDEX)
+    frames = perform_recording(INPUT_DEVICE_INDEX, RATE)
+    ACTUAL_RATE = RATE
     
-    # If it failed, try to find a fallback (only if not in manual override mode)
+    # If it failed, try current device with its default sample rate
+    if frames is None:
+        try:
+            with silence_stderr():
+                device_info = sd.query_devices(INPUT_DEVICE_INDEX)
+            default_rate = int(device_info['default_samplerate'])
+            if default_rate != RATE:
+                print(f"⚠️ {RATE}Hz failed on '{device_info['name']}', trying default {default_rate}Hz...")
+                frames = perform_recording(INPUT_DEVICE_INDEX, default_rate)
+                if frames is not None:
+                    ACTUAL_RATE = default_rate
+        except:
+            pass
+
+    # If it still failed, try to find a fallback (only if not in manual override mode)
     if frames is None and OVERRIDE_MODE == 'auto':
         print("🔄 Attempting fallback to secondary device...")
         fallback_idx = find_device_index(SECONDARY_DEVICE_NAME)
         if fallback_idx is not None and fallback_idx != INPUT_DEVICE_INDEX:
             print(f"⚠️ Primary device failed. Trying secondary: {SECONDARY_DEVICE_NAME} (index {fallback_idx})")
-            frames = perform_recording(fallback_idx)
+            
+            # Try secondary at standard rate
+            frames = perform_recording(fallback_idx, RATE)
+            ACTUAL_RATE = RATE
+            
+            # If secondary standard rate fails, try its default rate
+            if frames is None:
+                try:
+                    with silence_stderr():
+                        device_info = sd.query_devices(fallback_idx)
+                    default_rate = int(device_info['default_samplerate'])
+                    if default_rate != RATE:
+                        print(f"⚠️ {RATE}Hz failed on secondary, trying default {default_rate}Hz...")
+                        frames = perform_recording(fallback_idx, default_rate)
+                        if frames is not None:
+                            ACTUAL_RATE = default_rate
+                except:
+                    pass
+
             if frames is not None:
                 # Update current device if fallback succeeded
                 INPUT_DEVICE_INDEX = fallback_idx
@@ -424,7 +547,17 @@ def record_audio_stream(interactive_mode=False):
     elif frames is None:
         print(f"❌ Recording failed on {OVERRIDE_MODE} device.")
 
+    # Update the last used device name for reporting
+    try:
+        if INPUT_DEVICE_INDEX is not None:
+            with silence_stderr():
+                name = sd.query_devices(INPUT_DEVICE_INDEX)['name']
+            LAST_USED_DEVICE_NAME = name
+    except:
+        pass
+
     return np.concatenate(frames, axis=0) if frames else np.array([])
+
 
 
 def countdown_timer():
@@ -457,28 +590,28 @@ def process_audio_stream(audio_data=None):
     if audio_data is None or len(audio_data) == 0:
         return "", 0
         
-    model = get_model(device=DEVICE)
+    # Check duration (Whisper needs at least some audio to avoid hallucination/noise)
+    duration = len(audio_data) / ACTUAL_RATE
+    if duration < 0.5: # Half a second is a good minimum for whisper processing
+        return "", 0
+
+    get_model(device=DEVICE)
     
     transcribe_start_time = time.time()
     
-    temp_dir = get_temp_dir()
-    temp_file = temp_dir / "temp_output.wav"
-    
-    sf.write(str(temp_file), audio_data, RATE)
-        
-    # Transcribe
+    # Transcribe directly from numpy array
     try:
-        result = transcribe_audio(audio_path=str(temp_file), device=DEVICE)
-    finally:
-        pass
+        # sounddevice returns data in float32, mono recording should be flattened to 1D
+        if hasattr(audio_data, "flatten"):
+            audio_data = audio_data.flatten()
+            
+        result = transcribe_audio(audio_data=audio_data, sample_rate=ACTUAL_RATE, device=DEVICE)
+    except Exception as e:
+        print(f"Processing error: {e}")
+        result = ""
         
     transcribe_end_time = time.time()
     
-    try:
-        temp_file.unlink()
-    except:
-        pass
-        
     return result, transcribe_end_time - transcribe_start_time
 
 def record_and_transcribe():
@@ -488,7 +621,7 @@ def record_and_transcribe():
     
     frames = record_audio_stream(interactive_mode=True)
     
-    # Transcribe
+    # Transcribe using the optimized process_audio_stream
     result, transcribe_time = process_audio_stream(frames)
     
     transcription = result.strip()
@@ -510,7 +643,7 @@ def record_and_transcribe():
                 else:
                     print(f"❌ Failed to copy to clipboard after {max_retries} attempts: {e}")
     
-    print(f"Total time: {time.time() - process_start_time:.2f}s")
+    print(f"Total time: {time.time() - process_start_time:.2f}s (Transcribe: {transcribe_time:.2f}s)")
     print(f"\nTranscription: {transcription}")
     return transcription
 
@@ -536,6 +669,9 @@ def main():
     print("T2 Transcription Tool (Optimized)")
     print(f"Using device: {DEVICE}")
     load_audio_config()
+    
+    # Preload model at startup
+    preload_thread = preload_model(device=DEVICE)
     
     if preload_thread.is_alive():
         print("Waiting for model...")

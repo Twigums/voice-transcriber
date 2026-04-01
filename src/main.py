@@ -10,6 +10,7 @@ import subprocess
 import time
 import os
 import sys
+import pyperclip
 import atexit
 
 # Import core modules
@@ -20,7 +21,11 @@ from hotkeys import WaylandGlobalHotkeys
 # Ensure we can find t2
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import t2
-from t2 import preload_model, DEVICE, record_audio_stream, process_audio_stream, stop_recording, load_audio_config, select_audio_device, reset_terminal, IS_MUTED
+from t2 import (
+    preload_model, DEVICE, record_audio_stream, process_audio_stream, 
+    stop_recording, load_audio_config, select_audio_device, 
+    reset_terminal, get_active_device_name, IS_MUTED
+)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -33,15 +38,19 @@ class SimpleVoiceTranscriber:
         self.hotkey_system = None
         self.running = False
         self.audio_frames = []
+        self.copy_to_clipboard = False
+        self.start_time = 0
         
         # Load saved audio device configuration
         load_audio_config()
         
         # Initialize visual notification
         self.visual_notification = VisualNotification(app_name="Voice Transcriber")
+        self.visual_notification.set_active_device(get_active_device_name())
         
         # Preload model in background
-        logger.info("Loading transcription model...")
+        from t2 import MODEL_BACKEND
+        logger.info(f"Loading {MODEL_BACKEND.capitalize()} transcription model...")
         self.preload_thread = preload_model(device=DEVICE)
         
         # Initialize global hotkey system
@@ -83,57 +92,83 @@ class SimpleVoiceTranscriber:
             self.preload_thread.join()
         
         self.recording = True
+        self.start_time = time.time()
         stop_recording.clear()
         self.audio_frames = []
         
-        # Show visual notification
-        try:
-            self.visual_notification.show_recording()
-        except Exception as e:
-            logger.warning(f"Visual notification error: {e}")
-        
-        # Play start recording sound
-        try:
-            if not t2.IS_MUTED:
-                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-                subprocess.Popen(['mpg123', '-q', sound_path], 
-                               stderr=subprocess.DEVNULL)
-        except:
-            pass
-        
-        # Start recording in background thread
+        # Start recording in background thread IMMEDIATELY
         self.record_thread = threading.Thread(target=self.record_audio)
         self.record_thread.daemon = True
         self.record_thread.start()
+        
+        # Show visual notification and play sound in background
+        def notify_async():
+            if not self.recording:
+                return
+            try:
+                # Update device name before showing notification
+                self.visual_notification.set_active_device(get_active_device_name())
+                self.visual_notification.show_recording()
+            except Exception as e:
+                logger.warning(f"Visual notification error: {e}")
+            
+            try:
+                if not t2.IS_MUTED:
+                    sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
+                    subprocess.Popen(['mpg123', '-q', sound_path], 
+                                   stderr=subprocess.DEVNULL)
+            except:
+                pass
+        
+        threading.Thread(target=notify_async, daemon=True).start()
 
-    def stop_recording(self):
+    def stop_recording(self, copy_to_clipboard=False):
         """Stop recording and process audio"""
         if not self.recording:
             return
             
         self.recording = False
+        duration = time.time() - self.start_time
+        self.copy_to_clipboard = copy_to_clipboard
         stop_recording.set()
         
-        # Show processing notification
-        try:
-            self.visual_notification.show_processing()
-        except Exception as e:
-            logger.warning(f"Visual notification error: {e}")
+        # If recording was too short, discard it
+        if duration < 1.0:
+            logger.info(f"Discarding short recording ({duration:.2f}s)")
+            if self.record_thread:
+                self.record_thread.join()
+            
+            # Hide notification after a small delay to avoid flicker
+            def hide_async():
+                time.sleep(0.3)
+                try:
+                    self.visual_notification.hide_notification()
+                except:
+                    pass
+            threading.Thread(target=hide_async, daemon=True).start()
+            return
+            
+        # Show processing notification and sound in background
+        def notify_stop_async():
+            try:
+                self.visual_notification.show_processing()
+            except Exception as e:
+                logger.warning(f"Visual notification error: {e}")
+            
+            try:
+                if not t2.IS_MUTED:
+                    sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
+                    subprocess.Popen(['mpg123', '-q', sound_path], 
+                                   stderr=subprocess.DEVNULL)
+            except:
+                pass
         
-        # Play stop recording sound
-        try:
-            if not t2.IS_MUTED:
-                sound_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'sounds/pop2.mp3')
-                subprocess.Popen(['mpg123', '-q', sound_path], 
-                               stderr=subprocess.DEVNULL)
-        except:
-            pass
+        threading.Thread(target=notify_stop_async, daemon=True).start()
         
-        # Wait for recording to finish
+        # Wait for recording to finish and start processing
         if self.record_thread:
             self.record_thread.join()
         
-        # Process the recorded audio
         self.process_thread = threading.Thread(target=self.process_and_transcribe)
         self.process_thread.daemon = True
         self.process_thread.start()
@@ -154,6 +189,18 @@ class SimpleVoiceTranscriber:
                 logger.warning("No audio frames recorded")
                 self.visual_notification.hide_notification()
                 return
+                
+            # Double check duration based on actual samples (use t2.ACTUAL_RATE)
+            # This handles cases where stop_recording might have been slightly over 1s 
+            # but the audio buffer didn't capture enough
+            actual_duration = self.audio_frames.size / t2.ACTUAL_RATE
+            if actual_duration < 0.8:
+                logger.info(f"Discarding audio: too short ({actual_duration:.2f}s)")
+                try:
+                    self.visual_notification.hide_notification()
+                except:
+                    pass
+                return
 
             # Process the audio
             result, transcribe_time = process_audio_stream(self.audio_frames)
@@ -162,28 +209,61 @@ class SimpleVoiceTranscriber:
             transcription = result.strip()
             
             if transcription:
-                # Copy to clipboard with retry mechanism
-                import pyperclip
-                max_retries = 3
+                # Copy to clipboard if enabled in settings
+                from t2 import COPY_TO_CLIPBOARD
                 copy_success = False
-                for attempt in range(max_retries):
-                    try:
-                        pyperclip.copy(transcription)
-                        copy_success = True
-                        break
-                    except Exception as e:
-                        if attempt < max_retries - 1:
-                            logger.warning(f"Clipboard copy failed (attempt {attempt+1}), retrying...")
-                            time.sleep(0.5)
-                        else:
-                            logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
-                
-                # Show completion notification
-                try:
-                    if copy_success:
-                        self.visual_notification.show_completed()
+                if COPY_TO_CLIPBOARD:
+                    # Copy to clipboard with retry mechanism
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            pyperclip.copy(transcription)
+                            copy_success = True
+                            if self.copy_to_clipboard:
+                                logger.info(f"✅ Copied to clipboard: {transcription}")
+                            else:
+                                logger.info(f"📋 Copied to clipboard & typing: {transcription}")
+                            break
+                        except Exception as e:
+                            if attempt < max_retries - 1:
+                                logger.warning(f"Clipboard copy failed (attempt {attempt+1}), retrying...")
+                                time.sleep(0.5)
+                            else:
+                                logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
+                else:
+                    if self.copy_to_clipboard:
+                        logger.info(f"✅ Transcription (clipboard disabled): {transcription}")
                     else:
-                        # Maybe show a different notification or log it
+                        logger.info(f"📋 Typing: {transcription}")
+
+                # Output the transcription based on mode
+                if not self.copy_to_clipboard:
+                    # Type the text directly
+                    try:
+                        # CRITICAL: Wait for all modifiers to be released to avoid triggering shortcuts
+                        logger.debug("Waiting for modifier release before typing...")
+                        timeout = 1.0
+                        start_wait = time.time()
+                        while self.hotkey_system and self.hotkey_system.are_modifiers_pressed() and (time.time() - start_wait < timeout):
+                            time.sleep(0.02)
+                        
+                        # Small extra buffer to let OS process the releases
+                        time.sleep(0.05)
+                        
+                        if self.hotkey_system and self.hotkey_system.type_text(transcription):
+                            logger.info(f"✅ Typed: {transcription}")
+                        else:
+                            raise Exception("uinput typing failed or not available")
+                    except Exception as e:
+                        logger.error(f"Error typing transcription: {e}")
+                        # Fallback info (it's already in clipboard)
+                        logger.info(f"⚠️ Typing failed, but it's available in your clipboard")
+                
+                # Show completion notification with the transcribed text
+                try:
+                    if not COPY_TO_CLIPBOARD or copy_success:
+                        self.visual_notification.show_completed(sub_text=transcription)
+                    else:
                         logger.error("Transcription not copied to clipboard")
                 except Exception as e:
                     logger.warning(f"Visual notification error: {e}")
@@ -197,7 +277,9 @@ class SimpleVoiceTranscriber:
                 except:
                     pass
                 
-                logger.info(f"✅ Transcribed: {transcription}")
+                # We already printed the transcription via show_completed (terminal mode)
+                # but let's ensure it's also in the log for history (at a higher level or just use print)
+                # logger.info(f"✅ Transcribed: {transcription}")
             else:
                 # Hide processing notification
                 try:
@@ -318,12 +400,21 @@ class SimpleVoiceTranscriber:
             logger.error("💡 Install dependencies: pip install evdev python-uinput")
             return False
         
+        # Wait for model to load and warmup BEFORE starting the loop
+        if hasattr(self, 'preload_thread') and self.preload_thread.is_alive():
+            logger.info("⏳ Waiting for transcription model to initialize...")
+            self.preload_thread.join()
+            logger.info("✨ Model initialized and warmed up!")
+        
         logger.info("🎤 Voice Transcriber started!")
         logger.info(f"📱 Using device: {DEVICE}")
-        logger.info("🔥 Hold Alt+Shift to record, release to transcribe")
+        logger.info("🔥 Hold Alt+Shift to record, release to TYPE & COPY")
+        logger.info("📋 Hold Ctrl+Alt+Shift to record, release to ONLY COPY")
         logger.info("⚙️  Press Ctrl+Alt+I to change input device")
         logger.info("🔄 Use Ctrl+C to exit")
-        logger.info("💡 Global hotkeys work even when Alacritty is in focus!")
+        
+        # Show ready state in terminal/notifications
+        self.visual_notification.hide_notification()
         
         self.running = True
         
