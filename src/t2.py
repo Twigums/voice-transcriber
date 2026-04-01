@@ -248,41 +248,34 @@ def select_audio_device():
     # Always reset terminal before interaction to fix terminal state
     reset_terminal() 
     
+    # Status formatting
+    model_display = MODEL_BACKEND.capitalize()
+    copy_display = "Enabled" if COPY_TO_CLIPBOARD else "Disabled"
+    mute_display = "MUTED" if IS_MUTED else "Sound On"
+    
     print("\n🎤 Voice Transcriber Configuration:")
+    print("-" * 85)
     
-    # Display current status
-    print(f"Current Model: {MODEL_BACKEND.capitalize()}")
-    print(f"Clipboard Auto-Copy: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
-    
-    # Display current mode status
-    mode_display = {
-        'auto': "Automatic Selection",
-        'primary': "Manual Override (Primary)",
-        'secondary': "Manual Override (Secondary)"
-    }.get(OVERRIDE_MODE, "Unknown")
-    print(f"Audio Mode: {mode_display}")
-    
-    mute_status = " [MUTED]" if IS_MUTED else ""
-    print(f"Sounds: {'Muted' if IS_MUTED else 'On'}{mute_status}")
-    print("-" * 30)
+    def print_option(key, description, value):
+        print(f"  {key}. {description:<53} (currently: {value})")
 
-    print("P. Set Primary Device (currently: {})".format(PRIMARY_DEVICE_NAME or "Not Set"))
-    print("S. Set Secondary Device (currently: {})".format(SECONDARY_DEVICE_NAME or "Not Set"))
-    print("M. Toggle Mute (currently: {})".format("MUTED" if IS_MUTED else "Sound On"))
-    print("B. Switch Model Backend (cohere/whisper)")
-    print("V. Toggle Clipboard Auto-Copy")
-    print("R. Reset Terminal (if text is invisible or wonky)")
-    print("-" * 30)
+    print_option("P", "Set Primary Device", PRIMARY_DEVICE_NAME or "Not Set")
+    print_option("S", "Set Secondary Device", SECONDARY_DEVICE_NAME or "Not Set")
+    print_option("M", "Toggle Mute", mute_display)
+    print_option("B", "Switch Model Backend (cohere/whisper)", model_display)
+    print_option("V", "Toggle Clipboard Auto-Copy", copy_display)
+    print(f"  R. {'Reset Terminal (if text is invisible or wonky)':<53}")
+    print("-" * 85)
     
-    p_marker = " [ACTIVE]" if OVERRIDE_MODE == 'primary' else ""
-    s_marker = " [ACTIVE]" if OVERRIDE_MODE == 'secondary' else ""
-    a_marker = " [ACTIVE]" if OVERRIDE_MODE == 'auto' else ""
+    p_marker = "[ACTIVE]" if OVERRIDE_MODE == 'primary' else ""
+    s_marker = "[ACTIVE]" if OVERRIDE_MODE == 'secondary' else ""
+    a_marker = "[ACTIVE]" if OVERRIDE_MODE == 'auto' else ""
     
-    print(f"p. Use Primary Device (Manual Override){p_marker}")
-    print(f"s. Use Secondary Device (Manual Override){s_marker}")
-    print(f"a. Automatic Selection (Default){a_marker}")
-    print("-" * 30)
-    print("c. Cancel (or Enter to Save & Exit)")
+    print(f"  p. {'Use Primary Device (Manual Override)':<53} {p_marker}")
+    print(f"  s. {'Use Secondary Device (Manual Override)':<53} {s_marker}")
+    print(f"  a. {'Automatic Selection (Default)':<53} {a_marker}")
+    print("-" * 85)
+    print("  c or \"↵\". to save/exit")
     
     print("\nYour choice: ", end="", flush=True)
     choice = getch()
@@ -319,7 +312,8 @@ def select_audio_device():
             MODEL_BACKEND = 'whisper'
         else:
             MODEL_BACKEND = 'cohere'
-        print(f"✅ Model backend set to: {MODEL_BACKEND}")
+        
+        print(f"✅ Model backend set to: {MODEL_BACKEND.capitalize()}")
         transcribe2.set_backend(MODEL_BACKEND)
         save_audio_config()
         
