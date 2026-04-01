@@ -49,7 +49,8 @@ class SimpleVoiceTranscriber:
         self.visual_notification.set_active_device(get_active_device_name())
         
         # Preload model in background
-        logger.info("Loading transcription model...")
+        from t2 import MODEL_BACKEND
+        logger.info(f"Loading {MODEL_BACKEND.capitalize()} transcription model...")
         self.preload_thread = preload_model(device=DEVICE)
         
         # Initialize global hotkey system
@@ -206,15 +207,22 @@ class SimpleVoiceTranscriber:
             transcription = result.strip()
             
             if transcription:
-                # Always copy to clipboard (requested: even on normal Alt+Shift)
-                try:
-                    pyperclip.copy(transcription)
+                # Copy to clipboard if enabled in settings
+                from t2 import COPY_TO_CLIPBOARD
+                if COPY_TO_CLIPBOARD:
+                    try:
+                        pyperclip.copy(transcription)
+                        if self.copy_to_clipboard:
+                            logger.info(f"✅ Copied to clipboard: {transcription}")
+                        else:
+                            logger.info(f"📋 Copied to clipboard & typing: {transcription}")
+                    except Exception as e:
+                        logger.error(f"Error copying to clipboard: {e}")
+                else:
                     if self.copy_to_clipboard:
-                        logger.info(f"✅ Copied to clipboard: {transcription}")
+                        logger.info(f"✅ Transcription (clipboard disabled): {transcription}")
                     else:
-                        logger.info(f"📋 Copied to clipboard & typing: {transcription}")
-                except Exception as e:
-                    logger.error(f"Error copying to clipboard: {e}")
+                        logger.info(f"📋 Typing: {transcription}")
 
                 # Output the transcription based on mode
                 if not self.copy_to_clipboard:

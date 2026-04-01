@@ -64,6 +64,8 @@ SECONDARY_DEVICE_NAME = None
 LAST_USED_DEVICE_NAME = "Unknown"
 ACTUAL_RATE = RATE
 OVERRIDE_MODE = 'auto' # 'auto', 'primary', or 'secondary'
+MODEL_BACKEND = 'cohere' # 'cohere' or 'whisper'
+COPY_TO_CLIPBOARD = True
 CONFIG_FILE = get_data_dir() / 'audio_device_config.json'
 
 def find_device_index(name):
@@ -83,23 +85,26 @@ def find_device_index(name):
 def get_active_device_name():
     """Return the name of the device that will be used or was last used"""
     global LAST_USED_DEVICE_NAME
+    
+    model_info = f"[{MODEL_BACKEND.capitalize()}] "
+    
     if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
-        return f"Primary: {PRIMARY_DEVICE_NAME}"
+        return f"{model_info}Primary: {PRIMARY_DEVICE_NAME}"
     elif OVERRIDE_MODE == 'secondary' and SECONDARY_DEVICE_NAME:
-        return f"Secondary: {SECONDARY_DEVICE_NAME}"
+        return f"{model_info}Secondary: {SECONDARY_DEVICE_NAME}"
     
     # In auto mode, try to find what would be used
     if PRIMARY_DEVICE_NAME:
         idx = find_device_index(PRIMARY_DEVICE_NAME)
         if idx is not None:
-            return f"Primary: {PRIMARY_DEVICE_NAME}"
+            return f"{model_info}Primary: {PRIMARY_DEVICE_NAME}"
     
     if SECONDARY_DEVICE_NAME:
         idx = find_device_index(SECONDARY_DEVICE_NAME)
         if idx is not None:
-            return f"Secondary: {SECONDARY_DEVICE_NAME} (Fallback)"
+            return f"{model_info}Secondary: {SECONDARY_DEVICE_NAME} (Fallback)"
             
-    return LAST_USED_DEVICE_NAME
+    return f"{model_info}{LAST_USED_DEVICE_NAME}"
 
 def reset_terminal():
     """Reset terminal settings if they become wonky"""
@@ -131,9 +136,11 @@ DEVICE = get_device()
 # Audio buffering
 stop_recording = threading.Event()
 
+import transcribe2
+
 def load_audio_config():
     """Load audio device configuration from local file with fallback"""
-    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE
+    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE, MODEL_BACKEND, COPY_TO_CLIPBOARD
     try:
         if CONFIG_FILE.exists():
             with open(CONFIG_FILE, 'r') as f:
@@ -141,6 +148,11 @@ def load_audio_config():
                 PRIMARY_DEVICE_NAME = config.get('primary_device_name')
                 SECONDARY_DEVICE_NAME = config.get('secondary_device_name')
                 OVERRIDE_MODE = config.get('override_mode', 'auto')
+                MODEL_BACKEND = config.get('model_backend', 'cohere')
+                COPY_TO_CLIPBOARD = config.get('copy_to_clipboard', True)
+                
+                # Update backend in transcribe2
+                transcribe2.set_backend(MODEL_BACKEND)
                 
                 # If we have an override, try that first
                 if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
@@ -195,7 +207,9 @@ def save_audio_config():
             'input_device_index': INPUT_DEVICE_INDEX,
             'primary_device_name': PRIMARY_DEVICE_NAME,
             'secondary_device_name': SECONDARY_DEVICE_NAME,
-            'override_mode': OVERRIDE_MODE
+            'override_mode': OVERRIDE_MODE,
+            'model_backend': MODEL_BACKEND,
+            'copy_to_clipboard': COPY_TO_CLIPBOARD
         }
         with open(CONFIG_FILE, 'w') as f:
             f.write(json.dumps(config, indent=2))
@@ -205,12 +219,16 @@ def save_audio_config():
 
 def select_audio_device():
     """Interactive audio device selection with Primary/Secondary support"""
-    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE
+    global INPUT_DEVICE_INDEX, PRIMARY_DEVICE_NAME, SECONDARY_DEVICE_NAME, OVERRIDE_MODE, MODEL_BACKEND, COPY_TO_CLIPBOARD
     
     # Always reset terminal before interaction to fix terminal state
     reset_terminal() 
     
-    print("\n🎤 Configure Audio Input Devices:")
+    print("\n🎤 Voice Transcriber Configuration:")
+    
+    # Display current status
+    print(f"Current Model: {MODEL_BACKEND.capitalize()}")
+    print(f"Clipboard Auto-Copy: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
     
     # Display current mode status
     mode_display = {
@@ -218,11 +236,13 @@ def select_audio_device():
         'primary': "Manual Override (Primary)",
         'secondary': "Manual Override (Secondary)"
     }.get(OVERRIDE_MODE, "Unknown")
-    print(f"Current Mode: {mode_display}")
+    print(f"Audio Mode: {mode_display}")
     print("-" * 30)
 
     print("P. Set Primary Device (currently: {})".format(PRIMARY_DEVICE_NAME or "Not Set"))
     print("S. Set Secondary Device (currently: {})".format(SECONDARY_DEVICE_NAME or "Not Set"))
+    print("M. Switch Model Backend (cohere/whisper)")
+    print("V. Toggle Clipboard Auto-Copy")
     print("R. Reset Terminal (if text is invisible or wonky)")
     print("-" * 30)
     
@@ -244,6 +264,30 @@ def select_audio_device():
         reset_terminal()
         return False
     if choice.lower() == 'r':
+        reset_terminal()
+        return select_audio_device()
+    
+    if choice == 'V':
+        COPY_TO_CLIPBOARD = not COPY_TO_CLIPBOARD
+        print(f"✅ Clipboard Auto-Copy set to: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
+        save_audio_config()
+        reset_terminal()
+        return select_audio_device()
+    
+    if choice == 'M':
+        if MODEL_BACKEND == 'cohere':
+            MODEL_BACKEND = 'whisper'
+        else:
+            MODEL_BACKEND = 'cohere'
+        print(f"✅ Model backend set to: {MODEL_BACKEND}")
+        transcribe2.set_backend(MODEL_BACKEND)
+        save_audio_config()
+        
+        # Always preload the new model automatically
+        print(f"🚀 Preloading {MODEL_BACKEND.capitalize()} model in background...")
+        preload_model(device=DEVICE)
+        
+        time.sleep(1) # Brief pause to show message
         reset_terminal()
         return select_audio_device()
         
