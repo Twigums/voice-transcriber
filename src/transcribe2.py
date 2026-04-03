@@ -16,10 +16,10 @@ def get_backend():
     
     if _backend is None:
         if _current_backend_name == "whisper":
-            logger.info("Using Whisper (faster-whisper) backend")
+            logger.debug("Using Whisper (faster-whisper) backend")
             _backend = importlib.import_module("transcribe_whisper")
         else:
-            logger.info("Using Cohere (transformers) backend")
+            logger.debug("Using Cohere (transformers) backend")
             _backend = importlib.import_module("transcribe_cohere")
             
     return _backend
@@ -32,11 +32,11 @@ def set_backend(backend_name):
             try:
                 _backend.unload_model()
             except Exception as e:
-                logger.warning(f"Error unloading model: {e}")
+                logger.debug(f"Error unloading model: {e}")
                 
         _current_backend_name = backend_name.lower()
         _backend = None # Force reload on next call
-        logger.info(f"Backend switched to {_current_backend_name}")
+        logger.debug(f"Backend switched to {_current_backend_name}")
         
         # Force garbage collection after unloading
         import gc

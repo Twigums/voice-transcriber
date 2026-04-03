@@ -39,11 +39,11 @@ def get_model(model_name=MODEL, device="cpu", compute_type=None):
     
     with _model_lock:
         if _model is None:
-            print(f"🚀 Initializing Whisper model '{model_name}'...")
+            print(f"Initializing Whisper model '{model_name}'...")
             start_time = time.time()
             _model = load_model(model_name, device, compute_type)
             elapsed = time.time() - start_time
-            print(f"✅ Model loaded in {elapsed:.2f} seconds")
+            print(f"Model loaded in {elapsed:.2f} seconds")
     
     return _model
 
@@ -53,7 +53,7 @@ def preload_model(device="cpu"):
         try:
             get_model(device=device)
         except Exception as e:
-            print(f"⚠️ Preload error: {e}")
+            print(f"Preload error: {e}")
     
     thread = threading.Thread(target=_preload)
     thread.daemon = True
@@ -84,7 +84,7 @@ def transcribe_audio(audio_data=None, audio_path=None, sample_rate=16000, device
                     num_samples = int(len(audio_data) * 16000 / sample_rate)
                     audio_data = resample(audio_data, num_samples)
                 except ImportError:
-                    print(f"⚠️ Warning: Device rate is {sample_rate}Hz but Whisper needs 16000Hz. Resampling failed (librosa/scipy missing).")
+                    print(f"Warning: Device rate is {sample_rate}Hz but Whisper needs 16000Hz. Resampling failed (librosa/scipy missing).")
         
         input_source = audio_data
     else:
@@ -110,7 +110,7 @@ def transcribe_audio(audio_data=None, audio_path=None, sample_rate=16000, device
     elapsed = time.time() - start_time
     print(f"Transcription completed in {elapsed:.2f} seconds")
     if info:
-        print(f"🌍 Detected language '{info.language}' with probability {info.language_probability:.2f}")
+        print(f"Detected language '{info.language}' with probability {info.language_probability:.2f}")
     
     # Return the full transcript
     return " ".join(text_parts).strip()
@@ -120,7 +120,7 @@ def unload_model():
     global _model
     with _model_lock:
         if _model is not None:
-            print("📤 Unloading Whisper model...")
+            print("Unloading Whisper model...")
             del _model
             _model = None
             try:
@@ -131,7 +131,7 @@ def unload_model():
                 pass
             import gc
             gc.collect()
-            print("✅ Whisper model unloaded.")
+            print("Whisper model unloaded.")
             
             # Force CUDA garbage collection
             try:

@@ -63,8 +63,8 @@ class VisualNotification:
         self._notification_timers = []  # Track timers for cleanup
         
         if enable_logging:
-            logger.info(f"Display environment: {self.display_env}")
-            logger.info(f"Available tools: {self.available_tools}")
+            logger.debug(f"Display environment: {self.display_env}")
+            logger.debug(f"Available tools: {self.available_tools}")
     
     def set_active_device(self, device_name):
         """Set the active audio device name for display in notifications."""
@@ -90,25 +90,14 @@ class VisualNotification:
                 pass
         return tools
     
-    def show_notification(self, text, color="#0066cc", persistent=False, emoji="ℹ️"):
-        """
-        Show a notification with the given text and color.
-        
-        Args:
-            text (str): Text to display
-            color (str): Background color (hex format)
-            persistent (bool): Whether notification should stay until manually closed
-            emoji (str): Emoji to prefix the text with
-        """
-        display_text = f"{emoji} {text}"
-        if self.active and persistent:
-            return
+    def show_notification(self, text, color="#0066cc", persistent=False, emoji="i"):
+        """Show a notification with the given text and color."""
         
         if persistent:
             self.active = True
         
-        self._create_overlay(display_text, color, persistent)
-        self._show_terminal_notification(display_text)
+        self._create_overlay(text, color, persistent)
+        self._show_terminal_notification(text)
     
     def show_recording(self, text="RECORDING"):
         """Show a recording notification."""
@@ -116,8 +105,8 @@ class VisualNotification:
             return
         self.active = True
         
-        display_text = "🔴 RECORDING"
-        terminal_text = f"🔴 {text} - Recording in progress"
+        display_text = "RECORDING"
+        terminal_text = f"{text} - Recording in progress"
         
         if self.active_device:
             terminal_text += f" (Device: {self.active_device})"
@@ -128,14 +117,25 @@ class VisualNotification:
     def show_processing(self, text="PROCESSING"):
         """Show a processing notification."""
         self._cleanup_overlays()
-        self._create_overlay("⚡ PROCESSING", "#ffaa00", persistent=True)
-        self._show_terminal_notification(f"⚡ {text}...")
+        self.active = True
+        
+        # Run overlay in background thread so it doesn't block
+        def create_overlay_bg():
+            try:
+                self._create_overlay(f"LOADING {text}", "#ffaa00", persistent=True)
+            except:
+                pass
+        
+        overlay_thread = threading.Thread(target=create_overlay_bg, daemon=True)
+        overlay_thread.start()
+        
+        self._show_terminal_notification(f"Loading {text}...")
     
     def show_completed(self, text="COMPLETED", sub_text=None):
         """Show a completion notification."""
         self._cleanup_overlays()
-        self._create_overlay("✅ COMPLETED", "#00aaff", persistent=False)
-        self._show_terminal_notification(f"✅ {text}", sub_text=sub_text)
+        self._create_overlay("COMPLETED", "#00aaff", persistent=False)
+        self._show_terminal_notification(text, sub_text=sub_text)
         timer = threading.Timer(2.0, self.hide_notification)
         timer.start()
         self._notification_timers.append(timer)
@@ -143,8 +143,8 @@ class VisualNotification:
     def show_error(self, text="ERROR"):
         """Show an error notification."""
         self._cleanup_overlays()
-        self._create_overlay("❌ ERROR", "#ff0000", persistent=False)
-        self._show_terminal_notification(f"❌ {text}")
+        self._create_overlay("ERROR", "#ff0000", persistent=False)
+        self._show_terminal_notification(text)
         timer = threading.Timer(3.0, self.hide_notification)
         timer.start()
         self._notification_timers.append(timer)
@@ -152,8 +152,8 @@ class VisualNotification:
     def show_warning(self, text="WARNING"):
         """Show a warning notification."""
         self._cleanup_overlays()
-        self._create_overlay("⚠️ WARNING", "#ff8800", persistent=False)
-        self._show_terminal_notification(f"⚠️ {text}")
+        self._create_overlay("WARNING", "#ff8800", persistent=False)
+        self._show_terminal_notification(text)
         timer = threading.Timer(3.0, self.hide_notification)
         timer.start()
         self._notification_timers.append(timer)
@@ -288,22 +288,22 @@ if __name__ == "__main__":
             # Choose colors based on text content
             if "RECORDING" in text.upper():
                 color_code = "\033[91m"  # Red
-                symbol = "●"
+                symbol = "*"
             elif "PROCESSING" in text.upper() or "TRANSCRIBING" in text.upper():
                 color_code = "\033[93m"  # Yellow
-                symbol = "⚡"
+                symbol = ">"
             elif "COMPLETED" in text.upper() or "TYPED" in text.upper():
                 color_code = "\033[94m"  # Blue
-                symbol = "✅"
+                symbol = "="
             elif "ERROR" in text.upper():
                 color_code = "\033[95m"  # Magenta
-                symbol = "❌"
+                symbol = "!"
             elif "WARNING" in text.upper():
                 color_code = "\033[96m"  # Cyan
-                symbol = "⚠️"
+                symbol = "!"
             else:
                 color_code = "\033[92m"  # Green
-                symbol = "ℹ️"
+                symbol = "i"
             
             # For completion with sub_text (transcription), use a cleaner, non-boxed output
             if sub_text:
@@ -333,15 +333,6 @@ if __name__ == "__main__":
         
         self.active = False
         self._cleanup_overlays()
-        
-        try:
-            # Don't clear screen, just show a minimal ready message
-            ready_msg = f"🎤 {self.app_name} Ready"
-            if self.active_device:
-                ready_msg += f" (Active: {self.active_device})"
-            print(f"\n{ready_msg}\n")
-        except:
-            pass
 
     
     def cleanup(self):

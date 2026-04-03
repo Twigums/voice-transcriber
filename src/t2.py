@@ -101,22 +101,22 @@ def get_active_device_name():
     model_info = f"[{MODEL_BACKEND.capitalize()}] "
     
     if OVERRIDE_MODE == 'primary' and PRIMARY_DEVICE_NAME:
-        return f"{model_info}Primary: {PRIMARY_DEVICE_NAME}"
+        return f"{MODEL_BACKEND.capitalize()}: Primary: {PRIMARY_DEVICE_NAME}"
     elif OVERRIDE_MODE == 'secondary' and SECONDARY_DEVICE_NAME:
-        return f"{model_info}Secondary: {SECONDARY_DEVICE_NAME}"
+        return f"{MODEL_BACKEND.capitalize()}: Secondary: {SECONDARY_DEVICE_NAME}"
     
     # In auto mode, try to find what would be used
     if PRIMARY_DEVICE_NAME:
         idx = find_device_index(PRIMARY_DEVICE_NAME)
         if idx is not None:
-            return f"{model_info}Primary: {PRIMARY_DEVICE_NAME}"
+            return f"{MODEL_BACKEND.capitalize()}: Primary: {PRIMARY_DEVICE_NAME}"
     
     if SECONDARY_DEVICE_NAME:
         idx = find_device_index(SECONDARY_DEVICE_NAME)
         if idx is not None:
-            return f"{model_info}Secondary: {SECONDARY_DEVICE_NAME} (Fallback)"
+            return f"{MODEL_BACKEND.capitalize()}: Secondary: {SECONDARY_DEVICE_NAME} (Fallback)"
             
-    return f"{model_info}{LAST_USED_DEVICE_NAME}"
+    return f"{MODEL_BACKEND.capitalize()}: {LAST_USED_DEVICE_NAME}"
 
 def reset_terminal():
     """Reset terminal settings and clipboard processes if they become wonky"""
@@ -182,16 +182,16 @@ def load_audio_config():
                     idx = find_device_index(PRIMARY_DEVICE_NAME)
                     if idx is not None:
                         INPUT_DEVICE_INDEX = idx
-                        print(f"🔒 Manual override active: using primary device '{PRIMARY_DEVICE_NAME}' (index {idx})")
+                        print(f"[Override] Using primary device: {PRIMARY_DEVICE_NAME} (index {idx})")
                     else:
-                        print(f"⚠️ Manual override failed: Primary device '{PRIMARY_DEVICE_NAME}' not found.")
+                        print(f"[Override] Primary device not found: {PRIMARY_DEVICE_NAME}")
                 elif OVERRIDE_MODE == 'secondary' and SECONDARY_DEVICE_NAME:
                     idx = find_device_index(SECONDARY_DEVICE_NAME)
                     if idx is not None:
                         INPUT_DEVICE_INDEX = idx
-                        print(f"🔒 Manual override active: using secondary device '{SECONDARY_DEVICE_NAME}' (index {idx})")
+                        print(f"[Override] Using secondary device: {SECONDARY_DEVICE_NAME} (index {idx})")
                     else:
-                        print(f"⚠️ Manual override failed: Secondary device '{SECONDARY_DEVICE_NAME}' not found.")
+                        print(f"[Override] Secondary device not found: {SECONDARY_DEVICE_NAME}")
                 
                 # If no override or override failed, try the standard auto logic
                 if INPUT_DEVICE_INDEX is None:
@@ -199,27 +199,32 @@ def load_audio_config():
                     idx = find_device_index(PRIMARY_DEVICE_NAME)
                     if idx is not None:
                         INPUT_DEVICE_INDEX = idx
-                        print(f"✅ Using primary audio device: {PRIMARY_DEVICE_NAME} (index {idx})")
+                        print(f"Using primary audio device: {PRIMARY_DEVICE_NAME} (index {idx})")
                     else:
                         # Attempt to find secondary
                         idx = find_device_index(SECONDARY_DEVICE_NAME)
                         if idx is not None:
                             INPUT_DEVICE_INDEX = idx
-                            print(f"⚠️ Primary device '{PRIMARY_DEVICE_NAME}' not found. Falling back to secondary: {SECONDARY_DEVICE_NAME} (index {idx})")
+                            print(f"Using secondary audio device: {SECONDARY_DEVICE_NAME} (index {idx})")
                         else:
                             # Fallback to index if names fail (for backward compatibility or if names are not set)
                             INPUT_DEVICE_INDEX = config.get('input_device_index')
                             if INPUT_DEVICE_INDEX is not None:
                                 try:
                                     d = sd.query_devices(INPUT_DEVICE_INDEX)
-                                    print(f"ℹ️ Falling back to saved device index {INPUT_DEVICE_INDEX}: {d['name']}")
+                                    print(f"Falling back to saved device index {INPUT_DEVICE_INDEX}: {d['name']}")
                                 except:
                                     INPUT_DEVICE_INDEX = None
                 
                 if INPUT_DEVICE_INDEX is not None:
                     sd.default.device = INPUT_DEVICE_INDEX
+                    # Print secondary device info
+                    if SECONDARY_DEVICE_NAME:
+                        sec_idx = find_device_index(SECONDARY_DEVICE_NAME)
+                        if sec_idx is not None:
+                            print(f"Secondary audio device: {SECONDARY_DEVICE_NAME} (index {sec_idx})")
                 else:
-                    print("⚠️ No configured audio devices found. Using system default.")
+                    print("No configured audio devices found. Using system default.")
     except Exception as e:
         print(f"Could not load audio config: {e}")
 
@@ -253,7 +258,7 @@ def select_audio_device():
     copy_display = "Enabled" if COPY_TO_CLIPBOARD else "Disabled"
     mute_display = "MUTED" if IS_MUTED else "Sound On"
     
-    print("\n🎤 Voice Transcriber Configuration:")
+    print("\nVoice Transcriber Configuration:")
     print("-" * 85)
     
     def print_option(key, description, value):
@@ -295,14 +300,14 @@ def select_audio_device():
     
     if choice.lower() == 'm':
         IS_MUTED = not IS_MUTED
-        print(f"✅ Sounds {'Muted' if IS_MUTED else 'Enabled'}")
+        print(f"Sounds {'Muted' if IS_MUTED else 'Enabled'}")
         save_audio_config()
         reset_terminal()
         return select_audio_device()
     
     if choice == 'V':
         COPY_TO_CLIPBOARD = not COPY_TO_CLIPBOARD
-        print(f"✅ Clipboard Auto-Copy set to: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
+        print(f"Clipboard Auto-Copy set to: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
         save_audio_config()
         reset_terminal()
         return select_audio_device()
@@ -313,12 +318,12 @@ def select_audio_device():
         else:
             MODEL_BACKEND = 'cohere'
         
-        print(f"✅ Model backend set to: {MODEL_BACKEND.capitalize()}")
+        print(f"Model backend set to: {MODEL_BACKEND.capitalize()}")
         transcribe2.set_backend(MODEL_BACKEND)
         save_audio_config()
         
         # Always preload the new model automatically
-        print(f"🚀 Preloading {MODEL_BACKEND.capitalize()} model in background...")
+        print(f"Preloading {MODEL_BACKEND.capitalize()} model in background...")
         preload_model(device=DEVICE)
         
         time.sleep(1) # Brief pause to show message
@@ -332,11 +337,11 @@ def select_audio_device():
             if idx is not None:
                 INPUT_DEVICE_INDEX = idx
                 sd.default.device = INPUT_DEVICE_INDEX
-                print(f"✅ Manual Override: Set to Primary Device: {PRIMARY_DEVICE_NAME}")
+                print(f"Set to Primary Device: {PRIMARY_DEVICE_NAME}")
             else:
-                print(f"⚠️ Primary device '{PRIMARY_DEVICE_NAME}' not found, but override set.")
+                print(f"Primary device not found: {PRIMARY_DEVICE_NAME}")
         else:
-            print("⚠️ Primary device not configured yet.")
+            print("Primary device not configured yet.")
         save_audio_config()
         return True
     elif choice == 's':
@@ -346,16 +351,16 @@ def select_audio_device():
             if idx is not None:
                 INPUT_DEVICE_INDEX = idx
                 sd.default.device = INPUT_DEVICE_INDEX
-                print(f"✅ Manual Override: Set to Secondary Device: {SECONDARY_DEVICE_NAME}")
+                print(f"Set to Secondary Device: {SECONDARY_DEVICE_NAME}")
             else:
-                print(f"⚠️ Secondary device '{SECONDARY_DEVICE_NAME}' not found, but override set.")
+                print(f"Secondary device not found: {SECONDARY_DEVICE_NAME}")
         else:
-            print("⚠️ Secondary device not configured yet.")
+            print("Secondary device not configured yet.")
         save_audio_config()
         return True
     elif choice.lower() == 'a':
         OVERRIDE_MODE = 'auto'
-        print("✅ Mode: Automatic Selection")
+        print("Mode: Automatic Selection")
         # Let record_audio_stream handle the logic for auto selection
         save_audio_config()
         return True
@@ -367,7 +372,7 @@ def select_audio_device():
     is_primary = (choice == 'P')
     label = "Primary" if is_primary else "Secondary"
     
-    print(f"\n🎤 Available Audio Input Devices for {label}:")
+    print(f"\nAvailable Audio Input Devices for {label}:")
     print("=" * 60)
     
     devices = sd.query_devices()
@@ -384,7 +389,7 @@ def select_audio_device():
         print(f"  {i}: {device_info['name']}{marker_str}")
     
     if not input_devices:
-        print("❌ No input devices found!")
+        print("No input devices found!")
         return False
     
     try:
@@ -407,16 +412,16 @@ def select_audio_device():
             else:
                 SECONDARY_DEVICE_NAME = selected_name
             
-            print(f"✅ {label} Selected: {selected_name}")
+            print(f"{label} Selected: {selected_name}")
             save_audio_config()
             reset_terminal()
             return True
         else:
-            print("❌ Invalid choice")
+            print("Invalid choice")
             reset_terminal()
             return False
     except Exception as e:
-        print(f"❌ Selection error: {e}")
+        print(f"Selection error: {e}")
         reset_terminal()
         return False
 
@@ -429,33 +434,33 @@ def record_audio_stream(interactive_mode=False):
         primary_idx = find_device_index(PRIMARY_DEVICE_NAME)
         if primary_idx is not None:
             if INPUT_DEVICE_INDEX != primary_idx:
-                print(f"🔒 Manual Override: Using primary device '{PRIMARY_DEVICE_NAME}'")
+                print(f"[Override] Using primary device: {PRIMARY_DEVICE_NAME}")
                 INPUT_DEVICE_INDEX = primary_idx
                 sd.default.device = INPUT_DEVICE_INDEX
         else:
-            print(f"❌ Manual Override Failed: Primary device '{PRIMARY_DEVICE_NAME}' not found!")
+            print(f"[Override] Primary device not found: {PRIMARY_DEVICE_NAME}")
     elif OVERRIDE_MODE == 'secondary' and SECONDARY_DEVICE_NAME:
         secondary_idx = find_device_index(SECONDARY_DEVICE_NAME)
         if secondary_idx is not None:
             if INPUT_DEVICE_INDEX != secondary_idx:
-                print(f"🔒 Manual Override: Using secondary device '{SECONDARY_DEVICE_NAME}'")
+                print(f"[Override] Using secondary device: {SECONDARY_DEVICE_NAME}")
                 INPUT_DEVICE_INDEX = secondary_idx
                 sd.default.device = INPUT_DEVICE_INDEX
         else:
-            print(f"❌ Manual Override Failed: Secondary device '{SECONDARY_DEVICE_NAME}' not found!")
+            print(f"[Override] Secondary device not found: {SECONDARY_DEVICE_NAME}")
     elif PRIMARY_DEVICE_NAME:
         # Auto-recovery: Always try to see if the primary device has returned before starting
         primary_idx = find_device_index(PRIMARY_DEVICE_NAME)
         if primary_idx is not None:
             if INPUT_DEVICE_INDEX != primary_idx:
-                print(f"✨ Primary device '{PRIMARY_DEVICE_NAME}' detected! Switching back.")
+                print(f"Switching to primary device: {PRIMARY_DEVICE_NAME}")
                 INPUT_DEVICE_INDEX = primary_idx
                 sd.default.device = INPUT_DEVICE_INDEX
         elif SECONDARY_DEVICE_NAME:
             # If primary is gone, ensure we at least use the secondary if it's available
             secondary_idx = find_device_index(SECONDARY_DEVICE_NAME)
             if secondary_idx is not None and INPUT_DEVICE_INDEX != secondary_idx:
-                print(f"ℹ️ Using secondary device: {SECONDARY_DEVICE_NAME}")
+                print(f"Using secondary device: {SECONDARY_DEVICE_NAME}")
                 INPUT_DEVICE_INDEX = secondary_idx
                 sd.default.device = INPUT_DEVICE_INDEX
 
@@ -515,7 +520,7 @@ def record_audio_stream(interactive_mode=False):
                 device_info = sd.query_devices(INPUT_DEVICE_INDEX)
             default_rate = int(device_info['default_samplerate'])
             if default_rate != RATE:
-                print(f"⚠️ {RATE}Hz failed on '{device_info['name']}', trying default {default_rate}Hz...")
+                print(f"{RATE}Hz failed on '{device_info['name']}', trying default {default_rate}Hz...")
                 frames = perform_recording(INPUT_DEVICE_INDEX, default_rate)
                 if frames is not None:
                     ACTUAL_RATE = default_rate
@@ -524,10 +529,10 @@ def record_audio_stream(interactive_mode=False):
 
     # If it still failed, try to find a fallback (only if not in manual override mode)
     if frames is None and OVERRIDE_MODE == 'auto':
-        print("🔄 Attempting fallback to secondary device...")
+        print("Attempting fallback to secondary device...")
         fallback_idx = find_device_index(SECONDARY_DEVICE_NAME)
         if fallback_idx is not None and fallback_idx != INPUT_DEVICE_INDEX:
-            print(f"⚠️ Primary device failed. Trying secondary: {SECONDARY_DEVICE_NAME} (index {fallback_idx})")
+            print(f"Primary device failed. Trying secondary: {SECONDARY_DEVICE_NAME} (index {fallback_idx})")
             
             # Try secondary at standard rate
             frames = perform_recording(fallback_idx, RATE)
@@ -540,7 +545,7 @@ def record_audio_stream(interactive_mode=False):
                         device_info = sd.query_devices(fallback_idx)
                     default_rate = int(device_info['default_samplerate'])
                     if default_rate != RATE:
-                        print(f"⚠️ {RATE}Hz failed on secondary, trying default {default_rate}Hz...")
+                        print(f"{RATE}Hz failed on secondary, trying default {default_rate}Hz...")
                         frames = perform_recording(fallback_idx, default_rate)
                         if frames is not None:
                             ACTUAL_RATE = default_rate
@@ -551,11 +556,11 @@ def record_audio_stream(interactive_mode=False):
                 # Update current device if fallback succeeded
                 INPUT_DEVICE_INDEX = fallback_idx
                 sd.default.device = INPUT_DEVICE_INDEX
-                print("✅ Fallback successful!")
+                print("Fallback successful!")
         else:
-            print("❌ No valid secondary device found or secondary device is the same as failed device.")
+            print("No valid secondary device found or secondary device is the same as failed device.")
     elif frames is None:
-        print(f"❌ Recording failed on {OVERRIDE_MODE} device.")
+        print(f"Recording failed on {OVERRIDE_MODE} device.")
 
     # Update the last used device name for reporting
     try:
@@ -652,14 +657,14 @@ def record_and_transcribe():
             try:
                 pyperclip.copy(transcription)
                 copy_success = True
-                print("✅ Transcription copied to clipboard")
+                print("Transcription copied to clipboard")
                 break
             except Exception as e:
                 if attempt < max_retries - 1:
-                    print(f"⚠️ Clipboard copy failed (attempt {attempt+1}), retrying...")
+                    print(f"Clipboard copy failed (attempt {attempt+1}), retrying...")
                     time.sleep(0.5)
                 else:
-                    print(f"❌ Failed to copy to clipboard after {max_retries} attempts: {e}")
+                    print(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
     
     print(f"Total time: {time.time() - process_start_time:.2f}s (Transcribe: {transcribe_time:.2f}s)")
     print(f"\nTranscription: {transcription}")
@@ -707,7 +712,7 @@ def main():
                 print()
                 select_audio_device()
             elif ch.lower() == 'r':
-                print("\n🔄 Resetting terminal and clipboard...")
+                print("\nResetting terminal and clipboard...")
                 reset_terminal()
             elif ch.lower() == 'q':
                 break

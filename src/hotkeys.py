@@ -51,9 +51,9 @@ class WaylandGlobalHotkeys:
             # Add all keyboard keys to the virtual device
             all_keys = [getattr(uinput, name) for name in dir(uinput) if name.startswith('KEY_')]
             self.virtual_keyboard = uinput.Device(all_keys)
-            logger.info(f"Created virtual keyboard device with {len(all_keys)} keys")
+            logger.debug(f"Created virtual keyboard device with {len(all_keys)} keys")
         except Exception as e:
-            logger.warning(f"Could not create virtual keyboard: {e}")
+            logger.debug(f"Could not create virtual keyboard: {e}")
             # Continue without virtual keyboard - we can still detect hotkeys
             
         # Initial scan
@@ -212,15 +212,11 @@ class WaylandGlobalHotkeys:
                     device = evdev.InputDevice(path)
                     if self._is_keyboard_device(device):
                         new_devices.append(device)
-                        logger.info(f"Found new keyboard device: {device.name} at {device.path}")
-                    else:
-                        device.close()
                 except (PermissionError, OSError):
                     continue
             
             if new_devices:
                 self.devices.extend(new_devices)
-                logger.info(f"Added {len(new_devices)} new device(s). Total: {len(self.devices)}")
                 return True
             
             return False
@@ -283,7 +279,7 @@ class WaylandGlobalHotkeys:
 
         # Check for hotkey activation
         if self.is_hotkey_pressed() and not self.hotkey_active:
-            logger.debug("🎙️ Hotkey activated - starting recording")
+            logger.debug("Hotkey activated - starting recording")
             self.hotkey_active = True
             # Store if Ctrl was pressed when hotkey was activated
             self.copy_to_clipboard_mode = self.is_ctrl_pressed()

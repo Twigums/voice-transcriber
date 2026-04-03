@@ -48,9 +48,9 @@ class SimpleVoiceTranscriber:
         self.visual_notification = VisualNotification(app_name="Voice Transcriber")
         self.visual_notification.set_active_device(get_active_device_name())
         
-        # Preload model in background
+        # Preload model in background with loading indicator
         from t2 import MODEL_BACKEND
-        logger.info(f"Loading {MODEL_BACKEND.capitalize()} transcription model...")
+        print(f"Loading {MODEL_BACKEND.capitalize()} model from local files...")
         self.preload_thread = preload_model(device=DEVICE)
         
         # Initialize global hotkey system
@@ -71,10 +71,10 @@ class SimpleVoiceTranscriber:
             )
             
             if self.hotkey_system.devices:
-                logger.info("✅ Global hotkey system initialized")
+                logger.debug("Global hotkey system initialized")
                 return True
             else:
-                logger.error("❌ Failed to initialize global hotkey system")
+                logger.error("Failed to initialize global hotkey system")
                 return False
                 
         except Exception as e:
@@ -160,12 +160,12 @@ class SimpleVoiceTranscriber:
                 # Just a tap, maybe show settings or ignore
                 pass
             else:
-                logger.info("❌ No audio recorded")
+                logger.info("No audio recorded")
                 # Offer to change audio device
                 self.offer_device_change()
             return
             
-        logger.info("🔄 Processing recording...")
+        logger.info("Processing recording...")
         self.visual_notification.show_processing()
         
         try:
@@ -200,9 +200,9 @@ class SimpleVoiceTranscriber:
                             pyperclip.copy(transcription)
                             copy_success = True
                             if self.copy_to_clipboard:
-                                logger.info(f"✅ Copied to clipboard: {transcription}")
+                                logger.info(f"Copied to clipboard: {transcription}")
                             else:
-                                logger.info(f"📋 Copied to clipboard & typing: {transcription}")
+                                logger.info(f"Copied to clipboard & typing: {transcription}")
                             break
                         except Exception as e:
                             if attempt < max_retries - 1:
@@ -212,9 +212,9 @@ class SimpleVoiceTranscriber:
                                 logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
                 else:
                     if self.copy_to_clipboard:
-                        logger.info(f"✅ Transcription (clipboard disabled): {transcription}")
+                        logger.info(f"Transcription (clipboard disabled): {transcription}")
                     else:
-                        logger.info(f"📋 Typing: {transcription}")
+                        logger.info(f"Typing: {transcription}")
 
                 # Output the transcription based on mode
                 if not self.copy_to_clipboard:
@@ -231,13 +231,13 @@ class SimpleVoiceTranscriber:
                         time.sleep(0.05)
                         
                         if self.hotkey_system and self.hotkey_system.type_text(transcription):
-                            logger.info(f"✅ Typed: {transcription}")
+                            logger.info(f"Typed: {transcription}")
                         else:
                             raise Exception("uinput typing failed or not available")
                     except Exception as e:
                         logger.error(f"Error typing transcription: {e}")
                         # Fallback info (it's already in clipboard)
-                        logger.info(f"⚠️ Typing failed, but it's available in your clipboard")
+                        logger.warning("Typing failed, but it's available in your clipboard")
                 
                 # Show completion notification with the transcribed text
                 try:
@@ -264,7 +264,7 @@ class SimpleVoiceTranscriber:
                 except Exception as e:
                     logger.warning(f"Visual notification error: {e}")
                         
-                logger.info("❌ No speech detected")
+                logger.info("No speech detected")
                 
                 # Offer to change audio device
                 self.offer_device_change()
@@ -284,7 +284,7 @@ class SimpleVoiceTranscriber:
     def offer_device_change(self):
         """Offer to change audio device after failed recording"""
         logger.info("")
-        logger.info("🔧 What would you like to do?")
+        logger.info("What would you like to do?")
         logger.info("   Space/Enter: Try recording again")
         logger.info("   i: Change audio input device")
         logger.info("   r: Reset terminal & clipboard (if things are wonky)")
@@ -303,94 +303,93 @@ class SimpleVoiceTranscriber:
                 termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
             
             if ch in [' ', '\r', '\n']:  # Space or Enter
-                logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                logger.info("Ready to record - hold Alt+Shift when ready")
             elif ch.lower() == 'i':  # Input device selection
-                logger.info("🎤 Opening audio device selection...")
+                logger.info("Opening audio device selection...")
                 result = select_audio_device()
                 if result:
-                    logger.info("✅ Audio device updated!")
+                    logger.info("Audio device updated!")
                 else:
-                    logger.info("❌ Device selection cancelled.")
+                    logger.info("Device selection cancelled.")
                 reset_terminal()
-                logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                logger.info("Ready to record - hold Alt+Shift when ready")
             elif ch.lower() == 'r':  # Reset terminal
-                logger.info("🔄 Resetting terminal and clipboard...")
+                logger.info("Resetting terminal and clipboard...")
                 reset_terminal()
-                logger.info("✅ Reset complete.")
-                logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                logger.info("Reset complete.")
+                logger.info("Ready to record - hold Alt+Shift when ready")
             else:
                 reset_terminal()
-                logger.info("🎤 Ready for next recording")
+                logger.info("Ready for next recording")
                 
         except (KeyboardInterrupt, EOFError):
-            logger.info("🎤 Ready for next recording")
+            logger.info("Ready for next recording")
         except ImportError:
             # Windows fallback - use regular input
             try:
                 choice = input("Enter choice (Space/Enter/i/r/other): ").strip().lower()
                 if choice == ' ' or choice == '':
-                    logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                    logger.info("Ready to record - hold Alt+Shift when ready")
                 elif choice == 'i':
-                    logger.info("🎤 Opening audio device selection...")
+                    logger.info("Opening audio device selection...")
                     if select_audio_device():
-                        logger.info("✅ Audio device updated!")
+                        logger.info("Audio device updated!")
                     else:
-                        logger.info("❌ Device selection cancelled.")
-                    logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                        logger.info("Device selection cancelled.")
+                    logger.info("Ready to record - hold Alt+Shift when ready")
                 elif choice == 'r':
-                    logger.info("🔄 Resetting terminal and clipboard...")
+                    logger.info("Resetting terminal and clipboard...")
                     reset_terminal()
-                    logger.info("✅ Reset complete.")
-                    logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+                    logger.info("Reset complete.")
+                    logger.info("Ready to record - hold Alt+Shift when ready")
                 else:
-                    logger.info("🎤 Ready for next recording")
+                    logger.info("Ready for next recording")
             except (KeyboardInterrupt, EOFError):
-                logger.info("🎤 Ready for next recording")
+                logger.info("Ready for next recording")
 
     def change_input_device(self):
         """Open audio device selection menu via hotkey"""
         if self.recording:
-            logger.warning("⚠️  Cannot change settings while recording is active")
+            logger.warning("Cannot change settings while recording is active")
             return
             
         logger.info("")
         logger.info("⚙️  Settings hotkey detected!")
-        logger.info("🎤 Opening audio device selection...")
-        logger.info("💡 Please interact with the terminal window")
+        logger.info("Opening audio device selection...")
+        logger.info("Please interact with the terminal window")
         
         try:
             if select_audio_device():
-                logger.info("✅ Audio device updated!")
+                logger.info("Audio device updated!")
             else:
-                logger.info("❌ Device selection cancelled.")
+                logger.info("Device selection cancelled.")
             reset_terminal()
         except Exception as e:
             logger.error(f"Error in device selection: {e}")
             reset_terminal()
             
-        logger.info("🎤 Ready to record - hold Alt+Shift when ready")
+        logger.info("Ready to record - hold Alt+Shift when ready")
 
     
     def run(self):
         """Run the voice transcriber"""
         if not self.hotkey_system or not self.hotkey_system.devices:
-            logger.error("❌ No global hotkey system available")
-            logger.error("💡 Make sure you're running as root or in the input group")
-            logger.error("💡 Install dependencies: pip install evdev python-uinput")
+            logger.error("No global hotkey system available")
+            logger.error("Make sure you're running as root or in the input group")
+            logger.error("Install dependencies: pip install evdev python-uinput")
             return False
         
         # Wait for model to load and warmup BEFORE starting the loop
         if hasattr(self, 'preload_thread') and self.preload_thread.is_alive():
-            logger.info("⏳ Waiting for transcription model to initialize...")
+            self.visual_notification.show_processing("Loading model")
             self.preload_thread.join()
-            logger.info("✨ Model initialized and warmed up!")
+            self.visual_notification.hide_notification()
         
-        logger.info("🎤 Voice Transcriber started!")
-        logger.info(f"📱 Using device: {DEVICE}")
-        logger.info("🔥 Hold Alt+Shift to record, release to TYPE & COPY")
-        logger.info("📋 Hold Ctrl+Alt+Shift to record, release to ONLY COPY")
-        logger.info("⚙️  Press Ctrl+Alt+I to change input device")
-        logger.info("🔄 Use Ctrl+C to exit")
+        print("Voice Transcriber ready!")
+        print(f"Using: {get_active_device_name()}")
+        from t2 import SECONDARY_DEVICE_NAME
+        if SECONDARY_DEVICE_NAME:
+            print(f"Secondary: {SECONDARY_DEVICE_NAME}")
         
         # Show ready state in terminal/notifications
         self.visual_notification.hide_notification()
@@ -402,7 +401,7 @@ class SimpleVoiceTranscriber:
             hotkey_result = self.hotkey_system.run()
             return hotkey_result
         except KeyboardInterrupt:
-            logger.info("👋 Shutting down...")
+            logger.info("Shutting down...")
             return True
         except Exception as e:
             logger.error(f"Error running hotkey system: {e}")
@@ -421,7 +420,7 @@ if __name__ == "__main__":
         
         # Check if running as root
         if os.geteuid() == 0:
-            logger.info("✅ Running as root - full input device access available")
+            logger.debug("Running as root - full input device access available")
             return True
         
         # Check if user is in input group
@@ -436,7 +435,7 @@ if __name__ == "__main__":
             
             # Check if user is in input group (by GID)
             if input_group.gr_gid in current_gids:
-                logger.info("✅ User is in input group - input device access available")
+                logger.debug("User is in input group - input device access available")
                 return True
             else:
                 # Get group names for display
@@ -447,10 +446,10 @@ if __name__ == "__main__":
                     except:
                         group_names.append(str(gid))
                 
-                logger.error(f"❌ User {current_user} is NOT in the 'input' group.")
-                logger.error(f"💡 Current groups: {', '.join(group_names)}")
-                logger.error(f"💡 Run: sudo usermod -aG input {current_user}")
-                logger.error("💡 Then LOG OUT and LOG BACK IN for changes to take effect.")
+                logger.error(f"User {current_user} is NOT in the 'input' group.")
+                logger.error(f"Current groups: {', '.join(group_names)}")
+                logger.error(f"Run: sudo usermod -aG input {current_user}")
+                logger.error("Then LOG OUT and LOG BACK IN for changes to take effect.")
                 return False
         except Exception as e:
             logger.error(f"Error checking permissions: {e}")

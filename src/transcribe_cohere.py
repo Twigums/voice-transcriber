@@ -1,8 +1,6 @@
 # Optimized transcription with Cohere Transcribe model
 
-MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
-MODEL_REVISION = "499888924f5f1313b48ab0686c8f3a94178a4709"
-
+import logging
 import warnings
 import threading
 import os
@@ -13,9 +11,22 @@ import numpy as np
 from transformers import AutoProcessor, AutoModelForSpeechSeq2Seq
 from huggingface_hub import login
 
-# Filter out various warnings
+MODEL_ID = "CohereLabs/cohere-transcribe-03-2026"
+MODEL_REVISION = "499888924f5f1313b48ab0686c8f3a94178a4709"
+
+# Suppress warnings and verbose logs
 warnings.filterwarnings("ignore", category=UserWarning)
 warnings.filterwarnings("ignore", message=".*Init provider bridge failed.*")
+
+# Suppress all verbose library logging
+for logger_name in ["transformers", "huggingface_hub", "httpx", "tqdm", "urllib3", "requests", "urllib"]:
+    logging.getLogger(logger_name).setLevel(logging.CRITICAL)
+
+# Redirect stderr to suppress C library output during model loading
+_devnull = os.open(os.devnull, os.O_WRONLY)
+_old_stderr = os.dup(2)
+os.dup2(_devnull, 2)
+os.close(_devnull)
 
 # Global variables to hold the preloaded model and processor
 _model = None
@@ -33,7 +44,7 @@ def get_token():
                 if token:
                     return token
         except Exception as e:
-            print(f"⚠️ Error reading {cwd_token_file}: {e}")
+            print(f"Error reading {cwd_token_file}: {e}")
 
     # 2. Check local HF_TOKEN file in project root (relative to script)
     root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -72,7 +83,7 @@ def check_auth():
     if token:
         # Mask the token for printing
         masked = token[:6] + "..." + token[-4:] if len(token) > 10 else "******"
-        print(f"🔑 Authentication detected (token: {masked})")
+        print(f"Authentication detected (token: {masked})")
         try:
             # Login for the current session
             login(token=token, add_to_git_credential=False)
@@ -80,10 +91,10 @@ def check_auth():
             os.environ["HF_TOKEN"] = token
             return True
         except Exception as e:
-            print(f"⚠️ Error during Hugging Face login: {e}")
+            print(f"Error during Hugging Face login: {e}")
             return False
 
-    print("\n🔑 Hugging Face Authentication Info")
+    print("\nHugging Face Authentication Info")
     print(f"The model '{MODEL_ID}' is gated and requires access.")
     print("Please ensure one of the following:")
     print(f"  - A file named 'HF_TOKEN' exists in your current directory ({os.getcwd()})")
@@ -101,7 +112,7 @@ def load_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
     
     # Try loading from local cache first to avoid "checking for updates" network hit
     try:
-        print(f"🚀 Initializing Cohere model '{model_id}' (from cache)...")
+        print(f"Loading model from cache...")
         processor = AutoProcessor.from_pretrained(
             model_id, 
             revision=revision,
@@ -124,12 +135,12 @@ def load_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
             local_files_only=True
         ).to(device)
         
-        print("✅ Loaded from local cache.")
+        print("Loaded from local cache.")
         return model, processor
     except Exception as e:
         # If local loading failed, we probably need to download or verify
-        print(f"ℹ️ Model not in cache or update needed: {e}")
-        print(f"🚀 Downloading/Verifying Cohere model '{model_id}'...")
+        print(f"Model not in cache or update needed: {e}")
+        print(f"Downloading/Verifying Cohere model '{model_id}'...")
         
         # Now check auth and login only when we actually need network
         check_auth()
@@ -167,7 +178,7 @@ def load_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
         except Exception as e:
             error_str = str(e).lower()
             if "403" in error_str or "access" in error_str or "unauthorized" in error_str or "401" in error_str:
-                print("\n❌ Error: Access denied to gated model.")
+                print("\nError: Access denied to gated model.")
                 print(f"Make sure you have been granted access at: https://huggingface.co/{model_id}")
                 print("Check that your HF_TOKEN is correct and has 'Read' permissions.")
                 if token:
@@ -184,7 +195,7 @@ def get_model(model_id=MODEL_ID, revision=MODEL_REVISION, device="cpu"):
             start_time = time.time()
             _model, _processor = load_model(model_id, revision, device)
             elapsed = time.time() - start_time
-            print(f"✅ Model loaded and ready in {elapsed:.2f} seconds")
+            print(f"Model loaded and ready in {elapsed:.2f} seconds")
     
     return _model, _processor
 
@@ -195,7 +206,7 @@ def preload_model(device="cpu"):
             model, processor = get_model(device=device)
             
             # Warmup call with 0.1s of silence to trigger compilation/optimization
-            print("🔥 Warming up model (this may take a moment if compiling)...")
+            print("Warming up model (this may take a moment if compiling)...")
             warmup_audio = np.zeros(int(16000 * 0.1), dtype=np.float32)
             
             model.transcribe(
@@ -208,7 +219,7 @@ def preload_model(device="cpu"):
             )
             print("✨ Warmup complete! Ready for instant transcription.")
         except Exception as e:
-            print(f"⚠️ Preload/Warmup error: {e}")
+            print(f"Preload/Warmup error: {e}")
     
     thread = threading.Thread(target=_preload)
     thread.daemon = True
@@ -265,7 +276,7 @@ def unload_model():
     global _model, _processor
     with _model_lock:
         if _model is not None:
-            print("📤 Unloading Cohere model...")
+            print("Unloading Cohere model...")
             _model.cpu()
             del _model
             _model = None
@@ -275,7 +286,7 @@ def unload_model():
                 torch.cuda.empty_cache()
             import gc
             gc.collect()
-            print("✅ Cohere model unloaded.")
+            print("Cohere model unloaded.")
             
             # Force CUDA synchronization for complete cleanup
             try:
