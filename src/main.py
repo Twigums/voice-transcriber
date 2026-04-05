@@ -189,45 +189,32 @@ class SimpleVoiceTranscriber:
             self.audio_frames = []
             
             if transcription:
-                # Copy to clipboard if enabled in settings
+                # Always copy to clipboard
                 from t2 import COPY_TO_CLIPBOARD
                 copy_success = False
-                if COPY_TO_CLIPBOARD:
-                    # Copy to clipboard with retry mechanism
-                    max_retries = 3
-                    for attempt in range(max_retries):
-                        try:
-                            pyperclip.copy(transcription)
-                            copy_success = True
-                            if self.copy_to_clipboard:
-                                logger.info(f"Copied to clipboard: {transcription}")
-                            else:
-                                logger.info(f"Copied to clipboard & typing: {transcription}")
-                            break
-                        except Exception as e:
-                            if attempt < max_retries - 1:
-                                logger.warning(f"Clipboard copy failed (attempt {attempt+1}), retrying...")
-                                time.sleep(0.5)
-                            else:
-                                logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
-                else:
-                    if self.copy_to_clipboard:
-                        logger.info(f"Transcription (clipboard disabled): {transcription}")
-                    else:
-                        logger.info(f"Typing: {transcription}")
-
-                # Output the transcription based on mode
-                if not self.copy_to_clipboard:
-                    # Type the text directly
+                max_retries = 3
+                for attempt in range(max_retries):
                     try:
-                        # CRITICAL: Wait for all modifiers to be released to avoid triggering shortcuts
+                        pyperclip.copy(transcription)
+                        copy_success = True
+                        logger.info(f"Copied to clipboard: {transcription}")
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"Clipboard copy failed (attempt {attempt+1}), retrying...")
+                            time.sleep(0.5)
+                        else:
+                            logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
+
+                # Only type if auto-type is enabled
+                if COPY_TO_CLIPBOARD:
+                    try:
                         logger.debug("Waiting for modifier release before typing...")
                         timeout = 1.0
                         start_wait = time.time()
                         while self.hotkey_system and self.hotkey_system.are_modifiers_pressed() and (time.time() - start_wait < timeout):
                             time.sleep(0.02)
                         
-                        # Small extra buffer to let OS process the releases
                         time.sleep(0.05)
                         
                         if self.hotkey_system and self.hotkey_system.type_text(transcription):
@@ -236,12 +223,11 @@ class SimpleVoiceTranscriber:
                             raise Exception("uinput typing failed or not available")
                     except Exception as e:
                         logger.error(f"Error typing transcription: {e}")
-                        # Fallback info (it's already in clipboard)
                         logger.warning("Typing failed, but it's available in your clipboard")
                 
                 # Show completion notification with the transcribed text
                 try:
-                    if not COPY_TO_CLIPBOARD or copy_success:
+                    if copy_success:
                         self.visual_notification.show_completed(sub_text=transcription)
                     else:
                         logger.error("Transcription not copied to clipboard")

@@ -268,7 +268,7 @@ def select_audio_device():
     print_option("S", "Set Secondary Device", SECONDARY_DEVICE_NAME or "Not Set")
     print_option("M", "Toggle Mute", mute_display)
     print_option("B", "Switch Model Backend (cohere/whisper)", model_display)
-    print_option("V", "Toggle Clipboard Auto-Copy", copy_display)
+    print_option("T", "Toggle Auto-Type (auto-type to screen)", copy_display)
     print(f"  R. {'Reset Terminal (if text is invisible or wonky)':<53}")
     print("-" * 85)
     
@@ -305,9 +305,9 @@ def select_audio_device():
         reset_terminal()
         return select_audio_device()
     
-    if choice == 'V':
+    if choice == 'T':
         COPY_TO_CLIPBOARD = not COPY_TO_CLIPBOARD
-        print(f"Clipboard Auto-Copy set to: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
+        print(f"Auto-Type set to: {'Enabled' if COPY_TO_CLIPBOARD else 'Disabled'}")
         save_audio_config()
         reset_terminal()
         return select_audio_device()
