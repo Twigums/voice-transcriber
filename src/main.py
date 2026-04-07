@@ -189,8 +189,8 @@ class SimpleVoiceTranscriber:
             self.audio_frames = []
             
             if transcription:
-                # Always copy to clipboard
                 from t2 import COPY_TO_CLIPBOARD
+                should_type = COPY_TO_CLIPBOARD != self.copy_to_clipboard
                 copy_success = False
                 max_retries = 3
                 for attempt in range(max_retries):
@@ -206,8 +206,7 @@ class SimpleVoiceTranscriber:
                         else:
                             logger.error(f"Failed to copy to clipboard after {max_retries} attempts: {e}")
 
-                # Only type if auto-type is enabled
-                if COPY_TO_CLIPBOARD:
+                if should_type:
                     try:
                         logger.debug("Waiting for modifier release before typing...")
                         timeout = 1.0
