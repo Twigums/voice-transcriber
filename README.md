@@ -5,11 +5,7 @@ A voice transcription tool with global hotkeys for Windows and Linux.
 ## Quick Start
 
 ### Windows
-```powershell
-git clone https://github.com/jjamesmartiin/voice-transcriber.git
-cd voice-transcriber
-.\run.ps1
-```
+See my other branch [main-windows](https://github.com/jjamesmartiin/voice-transcriber/tree/main-windows)
 
 ### Linux
 ```bash
